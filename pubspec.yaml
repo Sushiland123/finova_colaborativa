@@ -1,0 +1,62 @@
+name: finova_colaborativa
+description: App de finanzas personales y colaborativas
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # UI y Diseño
+  cupertino_icons: ^1.0.6
+  google_fonts: ^6.1.0
+  flutter_animate: ^4.3.0
+  
+  # Navegación y Estado
+  go_router: ^13.0.0
+  provider: ^6.1.1
+  
+  # Base de datos local
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  
+  # Almacenamiento de preferencias
+  shared_preferences: ^2.2.2
+  
+  # Utilidades
+  intl: ^0.20.2  # Para formateo de fechas y números
+  uuid: ^4.2.1   # Para generar IDs únicos
+  
+  # Gráficos y visualización
+  fl_chart: ^0.66.0
+  
+  # Escaneo de recibos (para futuro)
+  # camera: ^0.10.5
+  # image_picker: ^1.0.5
+  
+  # Notificaciones locales (deshabilitado temporalmente)
+  # flutter_local_notifications: ^16.3.0
+  
+  # Videos de YouTube
+  youtube_player_flutter: ^9.0.0
+  
+  # Iconos adicionales
+  flutter_feather_icons: ^2.0.0+1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  
+  # Para agregar imágenes más adelante
+  # assets:
+  #   - assets/images/
+  #   - assets/icons/
