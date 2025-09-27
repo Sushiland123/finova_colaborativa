@@ -1,5 +1,75 @@
 import 'package:uuid/uuid.dart';
 
+// --- EXTENSION: TransactionCategory ---
+extension TransactionCategoryExtension on TransactionCategory {
+  String getCategoryName() {
+    switch (this) {
+      case TransactionCategory.salary:
+        return 'Salario';
+      case TransactionCategory.freelance:
+        return 'Freelance';
+      case TransactionCategory.investment:
+        return 'Inversión';
+      case TransactionCategory.gift:
+        return 'Regalo';
+      case TransactionCategory.other_income:
+        return 'Otro Ingreso';
+      case TransactionCategory.food:
+        return 'Comida';
+      case TransactionCategory.transport:
+        return 'Transporte';
+      case TransactionCategory.entertainment:
+        return 'Entretenimiento';
+      case TransactionCategory.health:
+        return 'Salud';
+      case TransactionCategory.education:
+        return 'Educación';
+      case TransactionCategory.shopping:
+        return 'Compras';
+      case TransactionCategory.bills:
+        return 'Servicios';
+      case TransactionCategory.rent:
+        return 'Alquiler';
+      case TransactionCategory.other_expense:
+        return 'Otro Gasto';
+    }
+  }
+
+  String getCategoryIcon() {
+    switch (this) {
+      case TransactionCategory.salary:
+        return '💰';
+      case TransactionCategory.freelance:
+        return '💻';
+      case TransactionCategory.investment:
+        return '📈';
+      case TransactionCategory.gift:
+        return '🎁';
+      case TransactionCategory.other_income:
+        return '💵';
+      case TransactionCategory.food:
+        return '🍔';
+      case TransactionCategory.transport:
+        return '🚗';
+      case TransactionCategory.entertainment:
+        return '🎮';
+      case TransactionCategory.health:
+        return '🏥';
+      case TransactionCategory.education:
+        return '📚';
+      case TransactionCategory.shopping:
+        return '🛍️';
+      case TransactionCategory.bills:
+        return '📄';
+      case TransactionCategory.rent:
+        return '🏠';
+      case TransactionCategory.other_expense:
+        return '💸';
+    }
+  }
+}
+
+
 enum TransactionType { income, expense }
 
 enum TransactionCategory {

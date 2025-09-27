@@ -269,19 +269,39 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    // Calcular gastos por categoría y mostrar nombre legible
+    // Calcular gastos por categoría y mostrar emoji + nombre en español
     Map<String, double> categoryExpenses = {};
-    String getCategoryName(dynamic category) {
-      if (category == null) return 'Otros';
-      if (category is String) return category;
-      // Si es enum, tomar solo el nombre
-      final str = category.toString();
-      final dotIndex = str.indexOf('.');
-      return dotIndex != -1 ? str.substring(dotIndex + 1) : str;
-    }
+    Map<String, String> categoryLabels = {};
+    Map<String, Color> categoryColorsMap = {};
     for (var expense in expenses) {
-      String categoryName = getCategoryName(expense.category);
-      categoryExpenses[categoryName] = (categoryExpenses[categoryName] ?? 0) + expense.amount;
+      // Obtener emoji y nombre en español
+      String label = '';
+      String key = '';
+      Color color = Colors.grey;
+      try {
+        label = expense.category.getCategoryIcon() + ' ' + expense.category.getCategoryName();
+        key = label;
+        // Mapear nombre español a color
+        switch (expense.category.getCategoryName()) {
+          case 'Comida': color = categoryColors['Alimentación'] ?? Colors.orange; break;
+          case 'Transporte': color = categoryColors['Transporte'] ?? Colors.blue; break;
+          case 'Entretenimiento': color = categoryColors['Entretenimiento'] ?? Colors.purple; break;
+          case 'Salud': color = categoryColors['Salud'] ?? Colors.green; break;
+          case 'Educación': color = categoryColors['Educación'] ?? Colors.teal; break;
+          case 'Servicios': color = categoryColors['Servicios'] ?? Colors.red; break;
+          case 'Compras': color = categoryColors['Compras'] ?? Colors.pink; break;
+          case 'Otro Gasto': color = categoryColors['Otros'] ?? Colors.grey; break;
+          case 'Alquiler': color = Colors.brown; break;
+          default: color = Colors.grey; break;
+        }
+      } catch (_) {
+        label = 'Otros';
+        key = 'Otros';
+        color = categoryColors['Otros'] ?? Colors.grey;
+      }
+      categoryExpenses[key] = (categoryExpenses[key] ?? 0) + expense.amount;
+      categoryLabels[key] = label;
+      categoryColorsMap[key] = color;
     }
 
     // Calcular el total
@@ -296,10 +316,10 @@ class _HomeScreenState extends State<HomeScreen> {
       final double percentage = (amount / totalExpenses) * 100;
       final double fontSize = isTouched ? 14 : 11;
       final double radius = isTouched ? 110 : 100;
-      // Usar color por categoría
+      // Usar color correcto por categoría
       sections.add(
         PieChartSectionData(
-          color: categoryColors[category] ?? Colors.grey,
+          color: categoryColorsMap[category] ?? Colors.grey,
           value: amount,
           title: percentage >= 5 ? '${percentage.toStringAsFixed(1)}%' : '',
           radius: radius,
@@ -390,7 +410,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         width: 16,
                         height: 16,
                         decoration: BoxDecoration(
-                          color: categoryColors[entry.key] ?? Colors.grey,
+                          color: categoryColorsMap[entry.key] ?? Colors.grey,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -400,7 +420,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              entry.key, // Solo el nombre legible de la categoría
+                              categoryLabels[entry.key] ?? entry.key, // Emoji + nombre en español
                               style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
