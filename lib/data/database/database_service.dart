@@ -859,7 +859,7 @@ class DatabaseService {
   }
 
   // Obtener resumen de deudas
-  Future<Map<String, dynamic>> getDebtSummary(String userId) async {
+  Future<Map<String, double>> getDebtSummary(String userId) async {
     Database db = await database;
     
     // Obtener total de deudas
@@ -869,9 +869,18 @@ class DatabaseService {
     );
     
     return {
-      'totalDebt': result.first['totalDebt'] ?? 0.0,
-      'remainingDebt': result.first['remainingDebt'] ?? 0.0,
-      'paidDebt': (result.first['totalDebt'] ?? 0.0) - (result.first['remainingDebt'] ?? 0.0),
+      'totalDebt': (result.first['totalDebt'] ?? 0.0) is int
+          ? (result.first['totalDebt'] ?? 0.0).toDouble()
+          : (result.first['totalDebt'] ?? 0.0) as double,
+      'remainingDebt': (result.first['remainingDebt'] ?? 0.0) is int
+          ? (result.first['remainingDebt'] ?? 0.0).toDouble()
+          : (result.first['remainingDebt'] ?? 0.0) as double,
+      'paidDebt': ((result.first['totalDebt'] ?? 0.0) is int
+              ? (result.first['totalDebt'] ?? 0.0).toDouble()
+              : (result.first['totalDebt'] ?? 0.0) as double) -
+          ((result.first['remainingDebt'] ?? 0.0) is int
+              ? (result.first['remainingDebt'] ?? 0.0).toDouble()
+              : (result.first['remainingDebt'] ?? 0.0) as double),
     };
   }
 }
