@@ -269,11 +269,19 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    // Calcular gastos por categoría
+    // Calcular gastos por categoría y mostrar nombre legible
     Map<String, double> categoryExpenses = {};
+    String getCategoryName(dynamic category) {
+      if (category == null) return 'Otros';
+      if (category is String) return category;
+      // Si es enum, tomar solo el nombre
+      final str = category.toString();
+      final dotIndex = str.indexOf('.');
+      return dotIndex != -1 ? str.substring(dotIndex + 1) : str;
+    }
     for (var expense in expenses) {
-      String category = (expense.category ?? 'Otros').toString();
-      categoryExpenses[category] = (categoryExpenses[category] ?? 0) + expense.amount;
+      String categoryName = getCategoryName(expense.category);
+      categoryExpenses[categoryName] = (categoryExpenses[categoryName] ?? 0) + expense.amount;
     }
 
     // Calcular el total
@@ -288,7 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final double percentage = (amount / totalExpenses) * 100;
       final double fontSize = isTouched ? 14 : 11;
       final double radius = isTouched ? 110 : 100;
-      
+      // Usar color por categoría
       sections.add(
         PieChartSectionData(
           color: categoryColors[category] ?? Colors.grey,
@@ -392,7 +400,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              entry.key,
+                              entry.key, // Solo el nombre legible de la categoría
                               style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
