@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' as riverpod;
+import '../providers/theme_provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
@@ -8,6 +10,7 @@ import 'transactions_screen.dart';
 import 'groups_screen.dart';
 import 'education_screen.dart';
 import '../../data/models/transaction_model.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -41,55 +44,75 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final appProvider = context.watch<AppProvider>();
-
-    return Scaffold(
-      body: SafeArea(
-        child: IndexedStack(
-          index: _selectedIndex,
-          children: [
-            _buildDashboard(appProvider),
-            _buildTransactions(),
-            _buildGroups(),
-            _buildEducation(),
-            _buildProfile(appProvider),
-          ],
-        ),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Inicio',
+    return riverpod.Consumer(
+      builder: (context, ref, _) {
+        final themeMode = ref.watch(themeProvider);
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Finova'),
+            actions: [
+              IconButton(
+                icon: Icon(
+                  themeMode == AppThemeMode.dark
+                      ? Icons.dark_mode
+                      : Icons.light_mode,
+                ),
+                tooltip: themeMode == AppThemeMode.dark ? 'Tema oscuro' : 'Tema claro',
+                onPressed: () {
+                  ref.read(themeProvider.notifier).toggleTheme();
+                },
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long),
-            label: 'Movimientos',
+          body: SafeArea(
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: [
+                _buildDashboard(appProvider),
+                _buildTransactions(),
+                _buildGroups(),
+                _buildEducation(),
+                _buildProfile(appProvider),
+              ],
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.groups_outlined),
-            selectedIcon: Icon(Icons.groups),
-            label: 'Grupos',
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: _selectedIndex,
+            onDestinationSelected: (index) {
+              setState(() {
+                _selectedIndex = index;
+              });
+            },
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.dashboard_outlined),
+                selectedIcon: Icon(Icons.dashboard),
+                label: 'Inicio',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.receipt_long_outlined),
+                selectedIcon: Icon(Icons.receipt_long),
+                label: 'Movimientos',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.groups_outlined),
+                selectedIcon: Icon(Icons.groups),
+                label: 'Grupos',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.school_outlined),
+                selectedIcon: Icon(Icons.school),
+                label: 'Aprender',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.person_outline),
+                selectedIcon: Icon(Icons.person),
+                label: 'Perfil',
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.school_outlined),
-            selectedIcon: Icon(Icons.school),
-            label: 'Aprender',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Perfil',
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -205,8 +228,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   title,
                   style: TextStyle(
-                    color: Colors.grey[600],
                     fontSize: 14,
+                    color: Colors.grey[600],
                   ),
                 ),
               ],
@@ -214,10 +237,9 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 8),
             Text(
               _currencyFormat.format(amount),
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: color,
               ),
             ),
           ],
@@ -227,140 +249,101 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildExpenseChart(AppProvider appProvider) {
-    // Filtrar solo los gastos
-    final expenses = appProvider.transactions
-        .where((t) => t.type == TransactionType.expense)
-        .toList();
-
-    if (expenses.isEmpty) {
+    // Calcular gastos por categoría
+    Map<String, double> categoryExpenses = {};
+    double totalExpenses = 0;
+    
+    for (var transaction in appProvider.transactions) {
+      if (transaction.type == TransactionType.expense) {
+        final categoryKey = transaction.category.name;
+        categoryExpenses[categoryKey] = 
+            (categoryExpenses[categoryKey] ?? 0) + transaction.amount;
+        totalExpenses += transaction.amount;
+      }
+    }
+    
+    if (categoryExpenses.isEmpty) {
       return Card(
-        child: Container(
-          height: 300,
-          padding: const EdgeInsets.all(20),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.pie_chart_outline,
-                  size: 64,
-                  color: Colors.grey[400],
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'No hay gastos registrados',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Registra tu primer gasto para ver el análisis',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[500],
-                  ),
-                ),
-              ],
-            ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              Icon(Icons.pie_chart_outline, size: 64, color: Colors.grey[400]),
+              const SizedBox(height: 16),
+              Text(
+                'No hay gastos registrados',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ],
           ),
         ),
       );
     }
-
-    // Calcular gastos por categoría y mostrar emoji + nombre en español
-    Map<String, double> categoryExpenses = {};
-    Map<String, String> categoryLabels = {};
-    Map<String, Color> categoryColorsMap = {};
-    for (var expense in expenses) {
-      // Obtener emoji y nombre en español
-      String label = '';
-      String key = '';
-      Color color = Colors.grey;
-      try {
-        label = expense.category.getCategoryIcon() + ' ' + expense.category.getCategoryName();
-        key = label;
-        // Mapear nombre español a color
-        switch (expense.category.getCategoryName()) {
-          case 'Comida': color = categoryColors['Alimentación'] ?? Colors.orange; break;
-          case 'Transporte': color = categoryColors['Transporte'] ?? Colors.blue; break;
-          case 'Entretenimiento': color = categoryColors['Entretenimiento'] ?? Colors.purple; break;
-          case 'Salud': color = categoryColors['Salud'] ?? Colors.green; break;
-          case 'Educación': color = categoryColors['Educación'] ?? Colors.teal; break;
-          case 'Servicios': color = categoryColors['Servicios'] ?? Colors.red; break;
-          case 'Compras': color = categoryColors['Compras'] ?? Colors.pink; break;
-          case 'Otro Gasto': color = categoryColors['Otros'] ?? Colors.grey; break;
-          case 'Alquiler': color = Colors.brown; break;
-          default: color = Colors.grey; break;
-        }
-      } catch (_) {
-        label = 'Otros';
-        key = 'Otros';
-        color = categoryColors['Otros'] ?? Colors.grey;
-      }
-      categoryExpenses[key] = (categoryExpenses[key] ?? 0) + expense.amount;
-      categoryLabels[key] = label;
-      categoryColorsMap[key] = color;
-    }
-
-    // Calcular el total
-    double totalExpenses = categoryExpenses.values.fold(0, (sum, amount) => sum + amount);
-
-    // Crear las secciones del gráfico
+    
+    // Preparar datos para el gráfico
     List<PieChartSectionData> sections = [];
     int index = 0;
     
+    // Mapeo de categorías en inglés a español con emojis
+    final Map<String, String> categoryLabels = {
+      'Food': '🍔 Alimentación',
+      'Transport': '🚗 Transporte',
+      'Entertainment': '🎮 Entretenimiento',
+      'Health': '🏥 Salud',
+      'Education': '📚 Educación',
+      'Services': '💡 Servicios',
+      'Shopping': '🛍️ Compras',
+      'Others': '📦 Otros',
+    };
+    
+    // Mapeo de categorías a colores
+    final Map<String, Color> categoryColorsMap = {
+      'Food': Colors.orange,
+      'Transport': Colors.blue,
+      'Entertainment': Colors.purple,
+      'Health': Colors.green,
+      'Education': Colors.teal,
+      'Services': Colors.red,
+      'Shopping': Colors.pink,
+      'Others': Colors.grey,
+    };
+    
     categoryExpenses.forEach((category, amount) {
+      final percentage = (amount / totalExpenses) * 100;
       final isTouched = index == touchedIndex;
-      final double percentage = (amount / totalExpenses) * 100;
-      final double fontSize = isTouched ? 14 : 11;
-      final double radius = isTouched ? 110 : 100;
-      // Usar color correcto por categoría
+      
       sections.add(
         PieChartSectionData(
           color: categoryColorsMap[category] ?? Colors.grey,
           value: amount,
-          title: percentage >= 5 ? '${percentage.toStringAsFixed(1)}%' : '',
-          radius: radius,
-          titleStyle: TextStyle(
-            fontSize: fontSize,
+          title: isTouched ? '${percentage.toStringAsFixed(1)}%' : '',
+          radius: isTouched ? 110 : 100,
+          titleStyle: const TextStyle(
+            fontSize: 16,
             fontWeight: FontWeight.bold,
             color: Colors.white,
           ),
+          titlePositionPercentageOffset: 0.55,
         ),
       );
       index++;
     });
-
+    
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                Icon(Icons.pie_chart, color: Theme.of(context).primaryColor),
+                const SizedBox(width: 8),
                 const Text(
                   'Gastos por Categoría',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _currencyFormat.format(totalExpenses),
-                    style: const TextStyle(
-                      color: Colors.red,
-                      fontWeight: FontWeight.bold,
-                    ),
                   ),
                 ),
               ],
