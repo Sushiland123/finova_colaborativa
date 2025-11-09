@@ -116,6 +116,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       ),
       floatingActionButton: _tabController.index == 1 
           ? FloatingActionButton.extended(
+              heroTag: 'add_group_expense_fab', // Tag único
               onPressed: () => _showAddGroupTransaction(),
               backgroundColor: Theme.of(context).primaryColor,
               icon: const Icon(Icons.add, color: Colors.white),

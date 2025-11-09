@@ -74,19 +74,6 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         elevation: 0,
         backgroundColor: Theme.of(context).primaryColor,
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            onPressed: () async {
-              await context.read<AppProvider>().ensureRemoteTransactions();
-              _filterTransactions();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Transacciones recargadas desde backend')),
-              );
-            },
-            icon: const Icon(Icons.sync),
-            tooltip: 'Forzar carga remota',
-          )
-        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
@@ -118,6 +105,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'add_transaction_fab', // Tag único
         onPressed: () => _showAddTransactionModal(context),
         backgroundColor: Theme.of(context).primaryColor,
         icon: const Icon(Icons.add, color: Colors.white),

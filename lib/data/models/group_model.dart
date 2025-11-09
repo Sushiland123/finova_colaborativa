@@ -230,6 +230,57 @@ class GroupExpense {
     );
   }
 
+  factory GroupExpense.fromBackend(Map<String, dynamic> json) {
+    // Parsear splits del backend (puede venir como Map o String)
+    Map<String, double> parsedSplits = {};
+    if (json['splits'] != null) {
+      if (json['splits'] is Map) {
+        final splitsMap = json['splits'] as Map;
+        parsedSplits = splitsMap.map(
+          (key, value) => MapEntry(
+            key.toString(),
+            (value is num) ? value.toDouble() : 0.0,
+          ),
+        );
+      } else if (json['splits'] is String) {
+        parsedSplits = _decodeSplits(json['splits']);
+      }
+    }
+
+    // Parsear amount - puede venir como String o num desde el backend
+    double parsedAmount = 0.0;
+    if (json['amount'] != null) {
+      if (json['amount'] is num) {
+        parsedAmount = (json['amount'] as num).toDouble();
+      } else if (json['amount'] is String) {
+        try {
+          parsedAmount = double.parse(json['amount']);
+        } catch (e) {
+          parsedAmount = 0.0;
+        }
+      }
+    }
+
+    return GroupExpense(
+      id: json['id']?.toString(),
+      groupId: json['groupId']?.toString() ?? '',
+      title: json['title'] ?? '',
+      amount: parsedAmount,
+      paidBy: json['paidBy']?.toString() ?? '',
+      splits: parsedSplits,
+      splitType: SplitType.equal,
+      date: json['date'] != null 
+          ? DateTime.parse(json['date']) 
+          : DateTime.now(),
+      description: json['description'],
+      receiptUrl: json['receiptUrl'],
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : DateTime.now(),
+      isSettled: json['isSettled'] ?? false,
+    );
+  }
+
   static String _encodeSplits(Map<String, double> splits) {
     return splits.entries.map((e) => '${e.key}:${e.value}').join(',');
   }

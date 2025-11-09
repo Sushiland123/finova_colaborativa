@@ -56,12 +56,14 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: _loggingOut ? null : () async {
                 try {
                   AppLogger.info('[UI] 🔴 ============ AppBar Logout PRESIONADO ============');
-                  setState(() => _loggingOut = true);
                   
-                  // Resetear data del AppProvider primero
+                  // Resetear data del AppProvider PRIMERO (antes de cualquier setState)
                   final appProvider = context.read<AppProvider>();
                   AppLogger.info('[UI] 🔴 Reseteando data del AppProvider...');
                   appProvider.resetData();
+                  
+                  // AHORA sí marcamos loading (después de limpiar datos)
+                  setState(() => _loggingOut = true);
                   
                   // Ejecutar logout
                   AppLogger.info('[UI] 🔴 Llamando a authNotifier.logout()...');
@@ -150,9 +152,18 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _selectedIndex,
-          onDestinationSelected: (index) {
+          onDestinationSelected: (index) async {
             AppLogger.info('[UI] NavigationBar tap index=$index');
             setState(() => _selectedIndex = index);
+            
+            // Si va a la pestaña de Grupos (index=2), cargar datos
+            if (index == 2) {
+              final provider = context.read<AppProvider>();
+              await provider.loadGroups();
+              for (var group in provider.groups) {
+                await provider.loadGroupExpenses(group.id);
+              }
+            }
           },
           destinations: const [
             NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Inicio'),
@@ -448,14 +459,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     AppLogger.info('[UI] 🔴 ============ Botón Cerrar Sesión PRESIONADO ============');
                     
                     try {
-                      // Marca visual inmediata
+                      // Resetear data del AppProvider PRIMERO (antes de setState)
+                      AppLogger.info('[UI] 🔴 Reseteando data del AppProvider...');
+                      appProvider.resetData();
+                      
+                      // Marca visual DESPUÉS de limpiar datos
                       setState(() {
                         _loggingOut = true;
                       });
-
-                      // Resetear data del AppProvider primero
-                      AppLogger.info('[UI] 🔴 Reseteando data del AppProvider...');
-                      appProvider.resetData();
 
                       // Ejecutar logout
                       AppLogger.info('[UI] 🔴 Llamando a authNotifier.logout()...');

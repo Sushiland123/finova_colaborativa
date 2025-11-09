@@ -27,8 +27,14 @@ class _GroupsScreenState extends State<GroupsScreen> {
   void initState() {
     super.initState();
     // Cargar grupos al iniciar
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AppProvider>().loadGroups();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final provider = context.read<AppProvider>();
+      await provider.loadGroups();
+      
+      // Cargar gastos de todos los grupos para actualizar balances
+      for (var group in provider.groups) {
+        await provider.loadGroupExpenses(group.id);
+      }
     });
   }
 
@@ -58,6 +64,11 @@ class _GroupsScreenState extends State<GroupsScreen> {
           return RefreshIndicator(
             onRefresh: () async {
               await provider.loadGroups();
+              
+              // Recargar gastos de todos los grupos para actualizar balances
+              for (var group in provider.groups) {
+                await provider.loadGroupExpenses(group.id);
+              }
             },
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
@@ -78,6 +89,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'create_group_fab', // Tag único para evitar conflictos
         onPressed: _showCreateGroupModal,
         backgroundColor: Theme.of(context).primaryColor,
         icon: const Icon(Icons.add, color: Colors.white),

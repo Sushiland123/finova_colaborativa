@@ -6,7 +6,7 @@ import '../models/group_model.dart';
 class DatabaseService {
   static Database? _database;
   static const String _databaseName = 'finova.db';
-  static const int _databaseVersion = 5; // Incrementamos la versión para agregar tablas de metas y deudas
+  static const int _databaseVersion = 6; // Agregamos userId a transactions
 
   // Tablas
   static const String tableTransactions = 'transactions';
@@ -46,6 +46,7 @@ class DatabaseService {
     await db.execute('''
       CREATE TABLE $tableTransactions (
         id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
         title TEXT NOT NULL,
         amount REAL NOT NULL,
         type INTEGER NOT NULL,
@@ -340,6 +341,23 @@ class DatabaseService {
           isPaid INTEGER DEFAULT 0
         )
       ''');
+    }
+    
+    // Actualización para versión 6: agregar userId a transactions
+    if (oldVersion < 6) {
+      // Verificar si la columna userId ya existe
+      var columns = await db.rawQuery('PRAGMA table_info($tableTransactions)');
+      bool hasUserId = columns.any((col) => col['name'] == 'userId');
+      
+      if (!hasUserId) {
+        // Agregar columna userId (con valor por defecto vacío para registros existentes)
+        await db.execute('''
+          ALTER TABLE $tableTransactions ADD COLUMN userId TEXT DEFAULT ''
+        ''');
+        
+        // Nota: Los registros existentes tendrán userId vacío
+        // Se recomienda limpiar la BD o migrar datos manualmente si es necesario
+      }
     }
   }
 
@@ -888,5 +906,20 @@ class DatabaseService {
               ? (result.first['remainingDebt'] ?? 0.0).toDouble()
               : (result.first['remainingDebt'] ?? 0.0) as double),
     };
+  }
+
+  /// Limpia TODA la base de datos (útil para logout)
+  /// Elimina todos los datos de todas las tablas
+  Future<void> clearAllData() async {
+    Database db = await database;
+    await db.transaction((txn) async {
+      await txn.delete(tableTransactions);
+      await txn.delete(tableGroups);
+      await txn.delete(tableGroupExpenses);
+      await txn.delete(tableGroupGoals);
+      await txn.delete(tableGroupMembers);
+      await txn.delete(tableCourseProgress);
+      await txn.delete(tableUserStats);
+    });
   }
 }

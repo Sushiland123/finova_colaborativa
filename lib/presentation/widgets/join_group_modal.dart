@@ -92,7 +92,7 @@ class _JoinGroupModalState extends State<JoinGroupModal> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Ingresa el código de 6 caracteres que te compartieron',
+                              'Ingresa el código de 8 caracteres que te compartieron',
                               style: TextStyle(
                                 fontSize: 14,
                                 color: Colors.amber[900],
@@ -109,7 +109,8 @@ class _JoinGroupModalState extends State<JoinGroupModal> {
                       controller: _codeController,
                       textAlign: TextAlign.center,
                       textCapitalization: TextCapitalization.characters,
-                      maxLength: 6,
+                      keyboardType: TextInputType.text,
+                      maxLength: 8,
                       style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
@@ -117,7 +118,7 @@ class _JoinGroupModalState extends State<JoinGroupModal> {
                       ),
                       decoration: InputDecoration(
                         labelText: 'Código de invitación',
-                        hintText: 'ABC123',
+                        hintText: 'ABC12345',
                         counterText: '',
                         prefixIcon: const Icon(Icons.vpn_key),
                         border: OutlineInputBorder(
@@ -125,15 +126,15 @@ class _JoinGroupModalState extends State<JoinGroupModal> {
                         ),
                       ),
                       inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[A-Z0-9]')),
-                        LengthLimitingTextInputFormatter(6),
+                        FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+                        LengthLimitingTextInputFormatter(8),
                       ],
                       validator: (value) {
                         if (value == null || value.isEmpty) {
                           return 'Por favor ingresa el código';
                         }
-                        if (value.length != 6) {
-                          return 'El código debe tener 6 caracteres';
+                        if (value.length != 8) {
+                          return 'El código debe tener 8 caracteres';
                         }
                         return null;
                       },

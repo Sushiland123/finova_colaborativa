@@ -6,6 +6,7 @@ import '../../data/models/education_model.dart';
 import '../../data/models/personal_finance_model.dart';
 import '../../data/database/database_service.dart';
 import '../../data/datasources/remote/transaction_remote_datasource.dart';
+import '../../data/datasources/remote/groups_remote_datasource.dart';
 import '../../core/utils/logger.dart';
 
 class AppProvider extends ChangeNotifier {
@@ -42,6 +43,7 @@ class AppProvider extends ChangeNotifier {
   
   // Datasource remoto
   final TransactionRemoteDataSource _remoteDataSource = TransactionRemoteDataSource(DioClient());
+  final GroupsRemoteDataSource _groupsRemoteDataSource = GroupsRemoteDataSource(DioClient());
 
   // Constructor (sin carga automática para evitar inicialización antes de auth)
   AppProvider();
@@ -291,6 +293,7 @@ class AppProvider extends ChangeNotifier {
   }
   
   void resetData() {
+    AppLogger.info('[APP_PROVIDER] 🧹 Limpiando datos en memoria...');
     _isLoggedIn = false;
     _userName = '';
     _totalBalance = 0.0;
@@ -305,103 +308,257 @@ class AppProvider extends ChangeNotifier {
     _personalGoals = [];
     _debts = [];
     notifyListeners();
+    
+    // NO limpiar SQLite para mantener funcionalidad offline
+    // SQLite debe estar filtrado por userId en cada consulta
   }
 
   // ============ MÉTODOS PARA GRUPOS ============
   
-  // Cargar grupos del usuario
+  // Cargar grupos del usuario desde el backend (con fallback a local)
   Future<void> loadGroups() async {
-    // 1. Intentar obtener desde backend autenticado
     try {
-      final dio = DioClient().dio;
-      final resp = await dio.get('/groups/me');
-      if (resp.data is List) {
-        final list = resp.data as List;
-        _groups = list
-            .whereType<Map>()
-            .map((e) => Group.fromBackend(Map<String, dynamic>.from(e)))
-            .toList();
-        notifyListeners();
-        // Opcional: aquí podríamos sincronizar a la BD local para modo offline
-        return;
-      }
-    } catch (_) {
-      // Silenciar: fallback a local
+      AppLogger.info('[APP_PROVIDER] 🔄 Cargando grupos desde backend...');
+      _groups = await _groupsRemoteDataSource.getUserGroups();
+      AppLogger.info('[APP_PROVIDER] ✅ Grupos cargados desde backend: ${_groups.length}');
+      
+      // Guardar en local para cache/offline (en segundo plano, sin bloquear)
+      _saveGroupsToLocalAsync();
+    } catch (e) {
+      // Fallback a base de datos local si backend falla
+      AppLogger.warning('[APP_PROVIDER] ⚠️ Error cargando grupos desde backend, usando local: $e');
+      String userId = _userName.isEmpty ? 'user_default' : _userName;
+      _groups = await _dbService.getUserGroups(userId);
+      AppLogger.info('[APP_PROVIDER] 📦 Grupos cargados desde local: ${_groups.length}');
     }
-
-    // 2. Fallback a datos locales
-    String userId = _userName.isEmpty ? 'user_default' : _userName;
-    _groups = await _dbService.getUserGroups(userId);
+    
     notifyListeners();
   }
 
-  // Crear nuevo grupo
+  // Guardar grupos a local en segundo plano
+  void _saveGroupsToLocalAsync() {
+    Future.microtask(() async {
+      try {
+        for (var group in _groups) {
+          await _dbService.insertGroup(group);
+        }
+        AppLogger.info('[APP_PROVIDER] 💾 ${_groups.length} grupos guardados en local');
+      } catch (e) {
+        AppLogger.warning('[APP_PROVIDER] ⚠️ Error guardando grupos en local (no crítico): $e');
+      }
+    });
+  }
+
+  // Crear nuevo grupo (backend + local)
   Future<void> createGroup(String name, String description, GroupType type) async {
-    String userId = _userName.isEmpty ? 'user_default' : _userName;
+    try {
+      AppLogger.info('[APP_PROVIDER] 📤 Creando grupo en backend...');
+      
+      // Crear en backend
+      final createdGroup = await _groupsRemoteDataSource.createGroup(
+        name: name,
+        description: description,
+      );
+      
+      AppLogger.info('[APP_PROVIDER] ✅ Grupo creado en backend con ID: ${createdGroup.id}');
+      AppLogger.info('[APP_PROVIDER] 📋 Código de invitación: ${createdGroup.inviteCode}');
+      
+      // Guardar en local
+      await _dbService.insertGroup(createdGroup);
+      
+      // Agregar el creador como miembro en local
+      String userId = _userName.isEmpty ? 'user_default' : _userName;
+      final member = GroupMember(
+        userId: userId,
+        name: _userName.isEmpty ? 'Usuario' : _userName,
+        email: '$userId@finova.com',
+      );
+      await _dbService.insertGroupMember(createdGroup.id, member);
+      
+    } catch (e) {
+      // Si backend falla, crear solo local con el tipo especificado
+      AppLogger.warning('[APP_PROVIDER] ⚠️ Error creando en backend, creando solo local: $e');
+      String userId = _userName.isEmpty ? 'user_default' : _userName;
+      
+      final group = Group(
+        name: name,
+        description: description,
+        creatorId: userId,
+        memberIds: [userId],
+        type: type, // Usar el tipo especificado
+      );
+      
+      await _dbService.insertGroup(group);
+      
+      // Agregar el creador como miembro
+      final member = GroupMember(
+        userId: userId,
+        name: _userName.isEmpty ? 'Usuario' : _userName,
+        email: '$userId@finova.com',
+      );
+      
+      await _dbService.insertGroupMember(group.id, member);
+    }
     
-    final group = Group(
-      name: name,
-      description: description,
-      creatorId: userId,
-      memberIds: [userId],
-      type: type,
-    );
-    
-    await _dbService.insertGroup(group);
-    
-    // Agregar el creador como miembro
-    final member = GroupMember(
-      userId: userId,
-      name: _userName.isEmpty ? 'Usuario' : _userName,
-      email: '$userId@finova.com',
-    );
-    
-    await _dbService.insertGroupMember(group.id, member);
     await loadGroups();
   }
 
-  // Unirse a grupo por código
+  // Unirse a grupo por código (backend + local)
   Future<bool> joinGroupByCode(String inviteCode) async {
-    Group? group = await _dbService.getGroupByInviteCode(inviteCode.toUpperCase());
-    
-    if (group == null) {
-      return false;
+    try {
+      AppLogger.info('[APP_PROVIDER] 📤 Uniéndose a grupo con código: $inviteCode');
+      
+      // Unirse en backend
+      final joinedGroup = await _groupsRemoteDataSource.joinGroup(inviteCode);
+      
+      AppLogger.info('[APP_PROVIDER] ✅ Unido al grupo: ${joinedGroup.name}');
+      
+      // Guardar en local
+      await _dbService.insertGroup(joinedGroup);
+      
+      // Agregar como miembro en local
+      String userId = _userName.isEmpty ? 'user_default' : _userName;
+      final member = GroupMember(
+        userId: userId,
+        name: _userName.isEmpty ? 'Usuario' : _userName,
+        email: '$userId@finova.com',
+      );
+      await _dbService.insertGroupMember(joinedGroup.id, member);
+      
+      await loadGroups();
+      return true;
+    } catch (e) {
+      // Intentar en local como fallback
+      AppLogger.warning('[APP_PROVIDER] ⚠️ Error uniéndose en backend, intentando local: $e');
+      
+      Group? group = await _dbService.getGroupByInviteCode(inviteCode.toUpperCase());
+      
+      if (group == null) {
+        return false;
+      }
+      
+      String userId = _userName.isEmpty ? 'user_default' : _userName;
+      
+      // Verificar si ya es miembro
+      if (group.memberIds.contains(userId)) {
+        return false;
+      }
+      
+      // Agregar al usuario al grupo
+      group.memberIds.add(userId);
+      await _dbService.updateGroup(group);
+      
+      // Agregar como miembro
+      final member = GroupMember(
+        userId: userId,
+        name: _userName.isEmpty ? 'Usuario' : _userName,
+        email: '$userId@finova.com',
+      );
+      
+      await _dbService.insertGroupMember(group.id, member);
+      await loadGroups();
+      
+      return true;
     }
-    
-    String userId = _userName.isEmpty ? 'user_default' : _userName;
-    
-    // Verificar si ya es miembro
-    if (group.memberIds.contains(userId)) {
-      return false;
-    }
-    
-    // Agregar al usuario al grupo
-    group.memberIds.add(userId);
-    await _dbService.updateGroup(group);
-    
-    // Agregar como miembro
-    final member = GroupMember(
-      userId: userId,
-      name: _userName.isEmpty ? 'Usuario' : _userName,
-      email: '$userId@finova.com',
-    );
-    
-    await _dbService.insertGroupMember(group.id, member);
-    await loadGroups();
-    
-    return true;
   }
 
-  // Agregar gasto grupal
+  // Agregar gasto grupal (backend + local)
   Future<void> addGroupExpense(GroupExpense expense) async {
-    await _dbService.insertGroupExpense(expense);
+    try {
+      AppLogger.info('[APP_PROVIDER] 📤 Enviando gasto grupal al backend...');
+      
+      // Obtener el ID del usuario actual del token (el backend usa el usuario autenticado)
+      // Enviar al backend
+      await _groupsRemoteDataSource.addGroupExpense(
+        groupId: expense.groupId,
+        title: expense.title,
+        amount: expense.amount,
+        paidBy: expense.paidBy,
+        description: expense.description,
+        splits: expense.splits,
+        date: expense.date,
+      );
+      
+      AppLogger.info('[APP_PROVIDER] ✅ Gasto grupal creado en backend');
+      
+      // Guardar en local
+      await _dbService.insertGroupExpense(expense);
+    } catch (e) {
+      // Si backend falla, guardar solo local
+      AppLogger.warning('[APP_PROVIDER] ⚠️ Error enviando gasto al backend, guardando solo local: $e');
+      await _dbService.insertGroupExpense(expense);
+    }
+    
     await loadGroupExpenses(expense.groupId);
   }
 
-  // Cargar gastos de un grupo
+  // Cargar gastos de un grupo (backend + local)
   Future<void> loadGroupExpenses(String groupId) async {
-    _currentGroupExpenses = await _dbService.getGroupExpenses(groupId);
+    try {
+      AppLogger.info('[APP_PROVIDER] 🔄 Cargando gastos del grupo $groupId desde backend...');
+      
+      // Intentar cargar desde backend primero
+      _currentGroupExpenses = await _groupsRemoteDataSource.getGroupExpenses(groupId);
+      AppLogger.info('[APP_PROVIDER] ✅ Gastos cargados desde backend: ${_currentGroupExpenses.length}');
+      
+      // Recalcular el balance del grupo basándose en los gastos
+      await _recalculateGroupBalance(groupId);
+      
+      // Guardar en local para cache/offline
+      _saveGroupExpensesToLocalAsync(groupId);
+    } catch (e) {
+      // Fallback a base de datos local si backend falla
+      AppLogger.warning('[APP_PROVIDER] ⚠️ Error cargando gastos desde backend, usando local: $e');
+      _currentGroupExpenses = await _dbService.getGroupExpenses(groupId);
+      AppLogger.info('[APP_PROVIDER] 📦 Gastos cargados desde local: ${_currentGroupExpenses.length}');
+      
+      // Recalcular el balance del grupo basándose en los gastos
+      await _recalculateGroupBalance(groupId);
+    }
+    
     notifyListeners();
+  }
+  
+  // Recalcular balance del grupo basado en los gastos
+  Future<void> _recalculateGroupBalance(String groupId) async {
+    final groupIndex = _groups.indexWhere((g) => g.id == groupId);
+    if (groupIndex != -1) {
+      // Calcular el balance sumando todos los montos de los gastos
+      double totalBalance = 0.0;
+      for (var expense in _currentGroupExpenses) {
+        totalBalance += expense.amount;
+        AppLogger.info('[APP_PROVIDER] 💰 Sumando gasto: ${expense.title} = \${expense.amount}');
+      }
+      
+      AppLogger.info('[APP_PROVIDER] 📊 Balance calculado para grupo $groupId: \$totalBalance');
+      
+      // Actualizar el balance del grupo
+      _groups[groupIndex].totalBalance = totalBalance;
+      
+      // Guardar en la base de datos local
+      await _dbService.updateGroup(_groups[groupIndex]);
+    }
+  }
+  
+  // Guardar gastos grupales a local en segundo plano
+  void _saveGroupExpensesToLocalAsync(String groupId) {
+    Future.microtask(() async {
+      try {
+        // Limpiar gastos del grupo en local primero
+        final oldExpenses = await _dbService.getGroupExpenses(groupId);
+        for (var expense in oldExpenses) {
+          await _dbService.deleteGroupExpense(expense.id);
+        }
+        
+        // Guardar los nuevos gastos del backend
+        for (var expense in _currentGroupExpenses) {
+          await _dbService.insertGroupExpense(expense);
+        }
+        AppLogger.info('[APP_PROVIDER] 💾 ${_currentGroupExpenses.length} gastos guardados en local');
+      } catch (e) {
+        AppLogger.warning('[APP_PROVIDER] ⚠️ Error guardando gastos en local (no crítico): $e');
+      }
+    });
   }
 
   // Cargar metas de un grupo

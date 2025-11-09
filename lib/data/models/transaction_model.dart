@@ -94,6 +94,7 @@ enum TransactionCategory {
 
 class Transaction {
   final String id;
+  final String? userId;  // Puede ser null para transacciones antiguas
   final String title;
   final double amount;
   final TransactionType type;
@@ -104,6 +105,7 @@ class Transaction {
 
   Transaction({
     String? id,
+    this.userId,
     required this.title,
     required this.amount,
     required this.type,
@@ -118,6 +120,7 @@ class Transaction {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'userId': userId ?? '',
       'title': title,
       'amount': amount,
       'type': type.index,
@@ -132,6 +135,7 @@ class Transaction {
   factory Transaction.fromMap(Map<String, dynamic> map) {
     return Transaction(
       id: map['id'],
+      userId: map['userId'],
       title: map['title'],
       amount: map['amount'],
       type: TransactionType.values[map['type']],
@@ -146,6 +150,7 @@ class Transaction {
   factory Transaction.fromBackend(Map<String, dynamic> json) {
     return Transaction(
       id: json['id']?.toString(),
+      userId: json['userId']?.toString(),
       title: json['title'] ?? '',
       amount: _parseAmount(json['amount']),
       type: _parseType(json['type']),
@@ -171,6 +176,10 @@ class Transaction {
     // Solo incluir campos opcionales si tienen valor
     if (description != null && description!.isNotEmpty) {
       json['description'] = description!;
+    }
+    
+    if (userId != null && userId!.isNotEmpty) {
+      json['userId'] = userId!;
     }
     
     // El ID solo se incluye en actualizaciones, no en creación
