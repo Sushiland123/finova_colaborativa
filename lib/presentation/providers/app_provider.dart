@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../data/models/transaction_model.dart';
 import '../../data/models/group_model.dart';
+import '../../core/network/dio_client.dart';
 import '../../data/models/education_model.dart';
 import '../../data/models/personal_finance_model.dart';
 import '../../data/database/database_service.dart';
+import '../../data/datasources/remote/transaction_remote_datasource.dart';
+import '../../core/utils/logger.dart';
 
 class AppProvider extends ChangeNotifier {
   // Estado del usuario
@@ -34,12 +37,20 @@ class AppProvider extends ChangeNotifier {
   List<PersonalGoal> _personalGoals = [];
   List<Debt> _debts = [];
   
-  // Base de datos
+  // Base de datos local
   final DatabaseService _dbService = DatabaseService.instance;
+  
+  // Datasource remoto
+  final TransactionRemoteDataSource _remoteDataSource = TransactionRemoteDataSource(DioClient());
 
-  // Constructor
-  AppProvider() {
-    loadTransactions();
+  // Constructor (sin carga automática para evitar inicialización antes de auth)
+  AppProvider();
+
+  // Inicializar datos después de autenticar (se llama explícitamente)
+  Future<void> initializeAfterLogin() async {
+    AppLogger.info('[APP_PROVIDER] 🚀 initializeAfterLogin()');
+    await loadTransactions();
+    // Aquí podríamos cargar otros recursos remotos (grupos, metas, etc.) bajo demanda
   }
   
   // Getters
@@ -81,12 +92,41 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
   
-  // Cargar transacciones desde la base de datos
+  // Cargar transacciones desde backend (con fallback a local)
   Future<void> loadTransactions() async {
-    _transactions = await _dbService.getTransactions();
+    try {
+      AppLogger.info('[APP_PROVIDER] 🔄 Cargando transacciones desde backend...');
+      // Intentar cargar desde backend primero
+      _transactions = await _remoteDataSource.getTransactions();
+      AppLogger.info('[APP_PROVIDER] ✅ Transacciones cargadas desde backend: ${_transactions.length}');
+      
+      // Guardar en local para cache/offline
+      for (var transaction in _transactions) {
+        await _dbService.insertTransaction(transaction);
+      }
+    } catch (e) {
+      // Fallback a base de datos local si backend falla
+      AppLogger.warning('[APP_PROVIDER] ⚠️ Error cargando desde backend, usando local: $e');
+      _transactions = await _dbService.getTransactions();
+      AppLogger.info('[APP_PROVIDER] 📦 Transacciones cargadas desde local: ${_transactions.length}');
+    }
+    
     _filteredTransactions = _transactions;
     await updateStatistics();
     notifyListeners();
+  }
+
+  // Fuerza carga desde backend exclusivamente (para diagnóstico)
+  Future<void> ensureRemoteTransactions() async {
+    try {
+      AppLogger.info('[APP_PROVIDER] 🔁 Forzando carga remota de transacciones...');
+      _transactions = await _remoteDataSource.getTransactions();
+      _filteredTransactions = _transactions;
+      await updateStatistics();
+      notifyListeners();
+    } catch (e) {
+      AppLogger.warning('[APP_PROVIDER] ❌ Error en ensureRemoteTransactions: $e');
+    }
   }
 
   // Actualizar estadísticas
@@ -102,21 +142,58 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Agregar nueva transacción
+  // Agregar nueva transacción (backend + local)
   Future<void> addTransaction(Transaction transaction) async {
-    await _dbService.insertTransaction(transaction);
+    try {
+      AppLogger.info('[APP_PROVIDER] 📤 Enviando transacción al backend...');
+      // Enviar al backend primero
+      final createdTransaction = await _remoteDataSource.createTransaction(transaction);
+      AppLogger.info('[APP_PROVIDER] ✅ Transacción creada en backend con ID: ${createdTransaction.id}');
+      
+      // Guardar en local con el ID del backend
+      await _dbService.insertTransaction(createdTransaction);
+    } catch (e) {
+      // Si backend falla, guardar solo local
+      AppLogger.warning('[APP_PROVIDER] ⚠️ Error enviando al backend, guardando solo local: $e');
+      await _dbService.insertTransaction(transaction);
+    }
+    
     await loadTransactions();
   }
 
-  // Actualizar transacción
+  // Actualizar transacción (backend + local)
   Future<void> updateTransaction(Transaction transaction) async {
-    await _dbService.updateTransaction(transaction);
+    try {
+      AppLogger.info('[APP_PROVIDER] 📤 Actualizando transacción en backend...');
+  await _remoteDataSource.updateTransaction(transaction.id, transaction);
+      AppLogger.info('[APP_PROVIDER] ✅ Transacción actualizada en backend');
+      
+      // Actualizar en local
+      await _dbService.updateTransaction(transaction);
+    } catch (e) {
+      // Si backend falla, actualizar solo local
+      AppLogger.warning('[APP_PROVIDER] ⚠️ Error actualizando en backend, actualizando solo local: $e');
+      await _dbService.updateTransaction(transaction);
+    }
+    
     await loadTransactions();
   }
 
-  // Eliminar transacción
+  // Eliminar transacción (backend + local)
   Future<void> deleteTransaction(String id) async {
-    await _dbService.deleteTransaction(id);
+    try {
+      AppLogger.info('[APP_PROVIDER] 📤 Eliminando transacción del backend...');
+      await _remoteDataSource.deleteTransaction(id);
+      AppLogger.info('[APP_PROVIDER] ✅ Transacción eliminada del backend');
+      
+      // Eliminar de local
+      await _dbService.deleteTransaction(id);
+    } catch (e) {
+      // Si backend falla, eliminar solo local
+      AppLogger.warning('[APP_PROVIDER] ⚠️ Error eliminando del backend, eliminando solo local: $e');
+      await _dbService.deleteTransaction(id);
+    }
+    
     await loadTransactions();
   }
 
@@ -172,7 +249,25 @@ class AppProvider extends ChangeNotifier {
   
   // Cargar grupos del usuario
   Future<void> loadGroups() async {
-    // Por ahora usamos un ID de usuario simulado
+    // 1. Intentar obtener desde backend autenticado
+    try {
+      final dio = DioClient().dio;
+      final resp = await dio.get('/groups/me');
+      if (resp.data is List) {
+        final list = resp.data as List;
+        _groups = list
+            .whereType<Map>()
+            .map((e) => Group.fromBackend(Map<String, dynamic>.from(e)))
+            .toList();
+        notifyListeners();
+        // Opcional: aquí podríamos sincronizar a la BD local para modo offline
+        return;
+      }
+    } catch (_) {
+      // Silenciar: fallback a local
+    }
+
+    // 2. Fallback a datos locales
     String userId = _userName.isEmpty ? 'user_default' : _userName;
     _groups = await _dbService.getUserGroups(userId);
     notifyListeners();

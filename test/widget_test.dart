@@ -9,22 +9,35 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:finova_colaborativa/main.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:finova_colaborativa/presentation/providers/theme_provider.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('App builds without crashing', (WidgetTester tester) async {
+    // Initialize sqflite for desktop testing
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          // If sharedPreferencesProvider exists, it will be overridden in main.dart at runtime;
+          // tests provide a mock instance here to satisfy any reads during startup.
+          sharedPreferencesProvider.overrideWithValue(prefs),
+        ],
+        child: const FinovaApp(),
+      ),
+    );
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Let initial async work settle (like checkSession)
+    await tester.pumpAndSettle();
+
+    // Basic sanity: the MaterialApp is present
+    expect(find.byType(MaterialApp), findsOneWidget);
   });
 }

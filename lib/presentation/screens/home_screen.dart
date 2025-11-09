@@ -1,19 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' as riverpod;
-import '../providers/theme_provider.dart';
-import 'package:go_router/go_router.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
+
+import '../providers/theme_provider.dart';
 import '../providers/app_provider.dart';
+import '../providers/auth_provider.dart';
+import '../../core/network/dio_client.dart';
+import '../../core/utils/logger.dart';
+import '../../data/database/database_service.dart';
 import 'transactions_screen.dart';
 import 'groups_screen.dart';
 import 'education_screen.dart';
-import '../../data/models/transaction_model.dart';
-
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -22,104 +26,163 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   int touchedIndex = -1;
-  
+  bool _loggingOut = false;
+
   final NumberFormat _currencyFormat = NumberFormat.currency(
     locale: 'es_SV',
     symbol: '\$',
     decimalDigits: 2,
   );
 
-  // Colores para las categorías
-  final Map<String, Color> categoryColors = {
-    'Alimentación': Colors.orange,
-    'Transporte': Colors.blue,
-    'Entretenimiento': Colors.purple,
-    'Salud': Colors.green,
-    'Educación': Colors.teal,
-    'Servicios': Colors.red,
-    'Compras': Colors.pink,
-    'Otros': Colors.grey,
-  };
-
   @override
   Widget build(BuildContext context) {
     final appProvider = context.watch<AppProvider>();
-    return riverpod.Consumer(
-      builder: (context, ref, _) {
-        final themeMode = ref.watch(themeProvider);
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Finova'),
-            actions: [
-              IconButton(
-                icon: Icon(
-                  themeMode == AppThemeMode.dark
-                      ? Icons.dark_mode
-                      : Icons.light_mode,
-                ),
-                tooltip: themeMode == AppThemeMode.dark ? 'Tema oscuro' : 'Tema claro',
-                onPressed: () {
-                  ref.read(themeProvider.notifier).toggleTheme();
-                },
-              ),
-            ],
-          ),
-          body: SafeArea(
-            child: IndexedStack(
-              index: _selectedIndex,
-              children: [
-                _buildDashboard(appProvider),
-                _buildTransactions(),
-                _buildGroups(),
-                _buildEducation(),
-                _buildProfile(appProvider),
-              ],
+    return riverpod.Consumer(builder: (context, ref, _) {
+      final themeMode = ref.watch(themeProvider);
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Finova'),
+          actions: [
+            // Acción directa para cerrar sesión desde cualquier pestaña
+            IconButton(
+              icon: _loggingOut 
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.logout),
+              tooltip: 'Cerrar sesión',
+              onPressed: _loggingOut ? null : () async {
+                try {
+                  AppLogger.info('[UI] 🔴 ============ AppBar Logout PRESIONADO ============');
+                  setState(() => _loggingOut = true);
+                  
+                  // Resetear data del AppProvider primero
+                  final appProvider = context.read<AppProvider>();
+                  AppLogger.info('[UI] 🔴 Reseteando data del AppProvider...');
+                  appProvider.resetData();
+                  
+                  // Ejecutar logout
+                  AppLogger.info('[UI] 🔴 Llamando a authNotifier.logout()...');
+                  await ref.read(authNotifierProvider.notifier).logout();
+                  
+                  AppLogger.info('[UI] ✅ logout() completado');
+                  
+                  // Mostrar mensaje de éxito
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Sesión cerrada exitosamente'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  AppLogger.error('[UI] ❌ Error al ejecutar logout (AppBar)', e);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error al cerrar sesión: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    setState(() => _loggingOut = false);
+                  }
+                }
+                // No reseteamos _loggingOut aquí - dejamos que GoRouter cambie la pantalla
+              },
             ),
-          ),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: _selectedIndex,
-            onDestinationSelected: (index) {
-              setState(() {
-                _selectedIndex = index;
-              });
-            },
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.dashboard_outlined),
-                selectedIcon: Icon(Icons.dashboard),
-                label: 'Inicio',
+            IconButton(
+              icon: Icon(themeMode == AppThemeMode.dark ? Icons.dark_mode : Icons.light_mode),
+              tooltip: themeMode == AppThemeMode.dark ? 'Tema oscuro' : 'Tema claro',
+              onPressed: () => ref.read(themeProvider.notifier).toggleTheme(),
+            ),
+            if (kDebugMode)
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.bug_report_outlined),
+                tooltip: 'Debug',
+                onSelected: (value) async {
+                  if (value == 'invalidate') {
+                    await DioClient().debugInvalidateAccessToken();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Access token invalidado (debug)')),
+                      );
+                    }
+                  } else if (value == 'reload_groups') {
+                    await appProvider.loadGroups();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Grupos recargados')),
+                      );
+                    }
+                  } else if (value == 'clear_local_transactions') {
+                    final dbService = DatabaseService.instance;
+                    await dbService.deleteAllTransactions();
+                    await appProvider.loadTransactions(); // Recargar desde backend
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('🗑️ Transacciones locales eliminadas')),
+                      );
+                    }
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: 'invalidate', child: Text('Debug: Invalidar Access Token')),
+                  PopupMenuItem(value: 'reload_groups', child: Text('Debug: Refrescar Grupos')),
+                  PopupMenuItem(value: 'clear_local_transactions', child: Text('Debug: Limpiar Transacciones Locales')),
+                ],
               ),
-              NavigationDestination(
-                icon: Icon(Icons.receipt_long_outlined),
-                selectedIcon: Icon(Icons.receipt_long),
-                label: 'Movimientos',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.groups_outlined),
-                selectedIcon: Icon(Icons.groups),
-                label: 'Grupos',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.school_outlined),
-                selectedIcon: Icon(Icons.school),
-                label: 'Aprender',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.person_outline),
-                selectedIcon: Icon(Icons.person),
-                label: 'Perfil',
-              ),
+          ],
+        ),
+        body: SafeArea(
+          child: IndexedStack(
+            index: _selectedIndex,
+            children: [
+              _buildDashboard(appProvider),
+              const TransactionsScreen(),
+              const GroupsScreen(),
+              const EducationScreen(),
+              _buildProfile(appProvider, ref),
             ],
           ),
-        );
-      },
-    );
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: (index) {
+            AppLogger.info('[UI] NavigationBar tap index=$index');
+            setState(() => _selectedIndex = index);
+          },
+          destinations: const [
+            NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Inicio'),
+            NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: 'Movimientos'),
+            NavigationDestination(icon: Icon(Icons.groups_outlined), selectedIcon: Icon(Icons.groups), label: 'Grupos'),
+            NavigationDestination(icon: Icon(Icons.school_outlined), selectedIcon: Icon(Icons.school), label: 'Aprender'),
+            NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Perfil'),
+          ],
+        ),
+      );
+    });
   }
 
   Widget _buildDashboard(AppProvider appProvider) {
+    // Calcular totales desde transacciones cargadas del backend
+    double totalIncome = 0;
+    double totalExpenses = 0;
+    double balance = 0;
+    
+    for (final transaction in appProvider.transactions) {
+      if (transaction.type.name == 'income') {
+        totalIncome += transaction.amount;
+      } else if (transaction.type.name == 'expense') {
+        totalExpenses += transaction.amount;
+      }
+    }
+    balance = totalIncome - totalExpenses;
+    
     return CustomScrollView(
       slivers: [
-        // Header con saludo y balance
         SliverAppBar(
           expandedHeight: 200,
           floating: false,
@@ -132,80 +195,48 @@ class _HomeScreenState extends State<HomeScreen> {
                   end: Alignment.bottomRight,
                   colors: [
                     Theme.of(context).primaryColor,
-                    Theme.of(context).primaryColor.withOpacity(0.7),
+                    Theme.of(context).primaryColor.withOpacity(0.75),
                   ],
                 ),
               ),
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Hola, ${appProvider.userName}! 👋',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 24, right: 24, top: 60, bottom: 16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Balance Total',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white.withOpacity(0.9)),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Tu balance actual',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.9),
-                      fontSize: 14,
+                    const SizedBox(height: 8),
+                    Text(
+                      _currencyFormat.format(balance),
+                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _currencyFormat.format(appProvider.totalBalance),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
         ),
-        
-        // Contenido principal
         SliverPadding(
           padding: const EdgeInsets.all(16),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
-              // Tarjetas de resumen
               Row(
                 children: [
-                  Expanded(
-                    child: _buildSummaryCard(
-                      'Ingresos',
-                      appProvider.totalIncome,
-                      Icons.trending_up,
-                      Colors.green,
-                    ),
-                  ),
+                  Expanded(child: _buildSummaryCard('Ingresos', totalIncome, Icons.trending_up, Colors.green)),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildSummaryCard(
-                      'Gastos',
-                      appProvider.totalExpenses,
-                      Icons.trending_down,
-                      Colors.red,
-                    ),
-                  ),
+                  Expanded(child: _buildSummaryCard('Gastos', totalExpenses, Icons.trending_down, Colors.red)),
                 ],
               ),
               const SizedBox(height: 24),
-              
-              // Gráfico de gastos por categoría
               _buildExpenseChart(appProvider),
               const SizedBox(height: 24),
-              
-              // Botones de acceso rápido
               _buildQuickActions(),
             ]),
           ),
@@ -214,34 +245,24 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSummaryCard(String title, double amount, IconData icon, Color color) {
+  Widget _buildSummaryCard(String label, double amount, IconData icon, Color color) {
     return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(icon, color: color, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
+                Row(children: [Icon(icon, color: color), const SizedBox(width: 8), Text(label, style: const TextStyle(fontWeight: FontWeight.w600))]),
+                Container(width: 36, height: 36, decoration: BoxDecoration(color: color.withOpacity(0.15), shape: BoxShape.circle)),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              _currencyFormat.format(amount),
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            const SizedBox(height: 12),
+            Text(_currencyFormat.format(amount), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           ],
         ),
       ),
@@ -249,55 +270,25 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildExpenseChart(AppProvider appProvider) {
-    // Calcular gastos por categoría
-    Map<String, double> categoryExpenses = {};
-    double totalExpenses = 0;
-    
-    for (var transaction in appProvider.transactions) {
-      if (transaction.type == TransactionType.expense) {
-        final categoryKey = transaction.category.name;
-        categoryExpenses[categoryKey] = 
-            (categoryExpenses[categoryKey] ?? 0) + transaction.amount;
-        totalExpenses += transaction.amount;
+    // Aggregate expenses by category (assumes transactions have category.name and type)
+    final expenses = <String, double>{};
+    double total = 0;
+    for (final t in appProvider.transactions) {
+      if (t.type.name == 'expense') { // fallback if enum not imported
+        expenses[t.category.name] = (expenses[t.category.name] ?? 0) + t.amount;
+        total += t.amount;
       }
     }
-    
-    if (categoryExpenses.isEmpty) {
+    if (expenses.isEmpty) {
       return Card(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              Icon(Icons.pie_chart_outline, size: 64, color: Colors.grey[400]),
-              const SizedBox(height: 16),
-              Text(
-                'No hay gastos registrados',
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            ],
-          ),
+          child: Column(children: [Icon(Icons.pie_chart_outline, size: 64, color: Colors.grey[400]), const SizedBox(height: 16), Text('No hay gastos registrados', style: TextStyle(color: Colors.grey[600]))]),
         ),
       );
     }
-    
-    // Preparar datos para el gráfico
-    List<PieChartSectionData> sections = [];
-    int index = 0;
-    
-    // Mapeo de categorías en inglés a español con emojis
-    final Map<String, String> categoryLabels = {
-      'Food': '🍔 Alimentación',
-      'Transport': '🚗 Transporte',
-      'Entertainment': '🎮 Entretenimiento',
-      'Health': '🏥 Salud',
-      'Education': '📚 Educación',
-      'Services': '💡 Servicios',
-      'Shopping': '🛍️ Compras',
-      'Others': '📦 Otros',
-    };
-    
-    // Mapeo de categorías a colores
-    final Map<String, Color> categoryColorsMap = {
+
+    final colorMap = {
       'Food': Colors.orange,
       'Transport': Colors.blue,
       'Entertainment': Colors.purple,
@@ -307,69 +298,53 @@ class _HomeScreenState extends State<HomeScreen> {
       'Shopping': Colors.pink,
       'Others': Colors.grey,
     };
-    
-    categoryExpenses.forEach((category, amount) {
-      final percentage = (amount / totalExpenses) * 100;
-      final isTouched = index == touchedIndex;
-      
-      sections.add(
-        PieChartSectionData(
-          color: categoryColorsMap[category] ?? Colors.grey,
-          value: amount,
-          title: isTouched ? '${percentage.toStringAsFixed(1)}%' : '',
-          radius: isTouched ? 110 : 100,
-          titleStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-          titlePositionPercentageOffset: 0.55,
-        ),
-      );
-      index++;
+    final labelMap = {
+      'Food': '🍔 Alimentación',
+      'Transport': '🚗 Transporte',
+      'Entertainment': '🎮 Entretenimiento',
+      'Health': '🏥 Salud',
+      'Education': '📚 Educación',
+      'Services': '💡 Servicios',
+      'Shopping': '🛍️ Compras',
+      'Others': '📦 Otros',
+    };
+
+    final sections = <PieChartSectionData>[];
+    var i = 0;
+    expenses.forEach((cat, value) {
+      final percent = total == 0 ? 0 : (value / total) * 100;
+      final isTouched = i == touchedIndex;
+      sections.add(PieChartSectionData(
+        color: colorMap[cat] ?? Colors.grey,
+        value: value,
+        title: isTouched ? '${percent.toStringAsFixed(1)}%' : '',
+        radius: isTouched ? 110 : 100,
+        titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+      ));
+      i++;
     });
-    
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(Icons.pie_chart, color: Theme.of(context).primaryColor),
-                const SizedBox(width: 8),
-                const Text(
-                  'Gastos por Categoría',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
+            Row(children: [Icon(Icons.pie_chart, color: Theme.of(context).primaryColor), const SizedBox(width: 8), const Text('Gastos por Categoría', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))]),
             const SizedBox(height: 24),
-            
-            // Gráfico de pastel
             AspectRatio(
               aspectRatio: 1.3,
               child: PieChart(
                 PieChartData(
-                  pieTouchData: PieTouchData(
-                    touchCallback: (FlTouchEvent event, pieTouchResponse) {
-                      setState(() {
-                        if (!event.isInterestedForInteractions ||
-                            pieTouchResponse == null ||
-                            pieTouchResponse.touchedSection == null) {
-                          touchedIndex = -1;
-                          return;
-                        }
-                        touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
-                      });
-                    },
-                  ),
-                  startDegreeOffset: -90,
-                  borderData: FlBorderData(show: false),
+                  pieTouchData: PieTouchData(touchCallback: (event, response) {
+                    setState(() {
+                      if (!event.isInterestedForInteractions || response?.touchedSection == null) {
+                        touchedIndex = -1;
+                      } else {
+                        touchedIndex = response!.touchedSection!.touchedSectionIndex;
+                      }
+                    });
+                  }),
                   sectionsSpace: 1,
                   centerSpaceRadius: 0,
                   sections: sections,
@@ -377,54 +352,26 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            
-            // Leyenda
             Wrap(
               spacing: 16,
               runSpacing: 12,
-              children: categoryExpenses.entries.map((entry) {
-                final percentage = (entry.value / totalExpenses) * 100;
+              children: expenses.entries.map((e) {
+                final percent = total == 0 ? 0 : (e.value / total) * 100;
                 return SizedBox(
                   width: (MediaQuery.of(context).size.width - 72) / 2,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 16,
-                        height: 16,
-                        decoration: BoxDecoration(
-                          color: categoryColorsMap[entry.key] ?? Colors.grey,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              categoryLabels[entry.key] ?? entry.key, // Emoji + nombre en español
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              '${_currencyFormat.format(entry.value)} (${percentage.toStringAsFixed(1)}%)',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                  child: Row(children: [
+                    Container(width: 16, height: 16, decoration: BoxDecoration(color: colorMap[e.key] ?? Colors.grey, shape: BoxShape.circle)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(labelMap[e.key] ?? e.key, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
+                        Text('${_currencyFormat.format(e.value)} (${percent.toStringAsFixed(1)}%)', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                      ]),
+                    )
+                  ]),
                 );
               }).toList(),
-            ),
+            )
           ],
         ),
       ),
@@ -435,110 +382,127 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Acciones Rápidas',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        const Text('Acciones Rápidas', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _buildActionButton(
-                'Ir a Transacciones',
-                Icons.receipt_long,
-                Colors.blue,
-                () {
-                  setState(() {
-                    _selectedIndex = 1;
-                  });
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildActionButton(
-                'Ver Grupos',
-                Icons.groups,
-                Colors.green,
-                () {
-                  setState(() {
-                    _selectedIndex = 2;
-                  });
-                },
-              ),
-            ),
-          ],
-        ),
+        Row(children: [
+          Expanded(child: _quickActionButton('Ir a Transacciones', Icons.receipt_long, Colors.blue, () => setState(() => _selectedIndex = 1))),
+          const SizedBox(width: 12),
+          Expanded(child: _quickActionButton('Ver Grupos', Icons.groups, Colors.green, () => setState(() => _selectedIndex = 2))),
+        ])
       ],
     );
   }
 
-  Widget _buildActionButton(String label, IconData icon, Color color, VoidCallback onPressed) {
+  Widget _quickActionButton(String label, IconData icon, Color color, VoidCallback onTap) {
     return Card(
       elevation: 0,
       color: color.withOpacity(0.1),
       child: InkWell(
-        onTap: onPressed,
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(icon, color: color),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          child: Row(children: [Icon(icon, color: color), const SizedBox(width: 12), Expanded(child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w600)))]),
         ),
       ),
     );
   }
 
-  Widget _buildTransactions() {
-    return const TransactionsScreen();
-  }
-
-  Widget _buildGroups() {
-    return const GroupsScreen();
-  }
-
-  Widget _buildEducation() {
-    return const EducationScreen();
-  }
-
-  Widget _buildProfile(AppProvider appProvider) {
+  Widget _buildProfile(AppProvider appProvider, riverpod.WidgetRef ref) {
+    AppLogger.info('[UI] 👤 _buildProfile construyéndose');
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircleAvatar(
-            radius: 50,
-            child: Icon(Icons.person, size: 50),
-          ),
+          const CircleAvatar(radius: 50, child: Icon(Icons.person, size: 50)),
           const SizedBox(height: 16),
-          Text(
-            appProvider.userName,
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
+          Text(appProvider.userName, style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 32),
-          ElevatedButton(
-            onPressed: () {
-              appProvider.resetData();
-              GoRouter.of(context).go('/login');
-            },
-            child: const Text('Cerrar Sesión'),
-          ),
+          if (kDebugMode)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: riverpod.Consumer(
+                builder: (context, debugRef, _) {
+                  final authState = debugRef.watch(authNotifierProvider);
+                  return FutureBuilder<List<String?>> (
+                    future: Future.wait([
+                      DioClient().getToken(),
+                    ]),
+                    builder: (context, snap) {
+                      final access = snap.data?.elementAtOrNull(0);
+                      return Column(
+                        children: [
+                          Text('Auth: ${authState.isAuthenticated ? 'LOGGED IN' : 'LOGGED OUT'}', style: const TextStyle(fontSize: 12)),
+                          Text('Access(len): ${access == null ? 'null' : access.length}', style: const TextStyle(fontSize: 12)),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          _loggingOut
+              ? const CircularProgressIndicator()
+              : ElevatedButton(
+                  onPressed: () async {
+                    AppLogger.info('[UI] 🔴 ============ Botón Cerrar Sesión PRESIONADO ============');
+                    
+                    try {
+                      // Marca visual inmediata
+                      setState(() {
+                        _loggingOut = true;
+                      });
+
+                      // Resetear data del AppProvider primero
+                      AppLogger.info('[UI] 🔴 Reseteando data del AppProvider...');
+                      appProvider.resetData();
+
+                      // Ejecutar logout
+                      AppLogger.info('[UI] 🔴 Llamando a authNotifier.logout()...');
+                      await ref
+                          .read(authNotifierProvider.notifier)
+                          .logout();
+
+                      // Verificar token realmente eliminado (debug)
+                      if (kDebugMode) {
+                        final tokenPost = await DioClient().getToken();
+                        AppLogger.info('[UI] 🔍 Token después de logout: ${tokenPost == null || tokenPost.isEmpty ? "ELIMINADO ✅" : "AÚN PRESENTE ⚠️"}');
+                      }
+                      
+                      // Mostrar mensaje de éxito
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Sesión cerrada exitosamente'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                      
+                      AppLogger.info('[UI] ✅ Logout completado - GoRouter redirigirá automáticamente');
+                    } catch (e) {
+                      AppLogger.error('[UI] ❌ Error al ejecutar logout', e);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error al cerrar sesión: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        setState(() {
+                          _loggingOut = false;
+                        });
+                      }
+                    }
+                    // No reseteamos _loggingOut aquí - dejamos que GoRouter cambie la pantalla
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  ),
+                  child: const Text('Cerrar Sesión'),
+                )
         ],
       ),
     );

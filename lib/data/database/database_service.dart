@@ -413,6 +413,12 @@ class DatabaseService {
     );
   }
 
+  // Eliminar todas las transacciones (útil para debug/reset)
+  Future<int> deleteAllTransactions() async {
+    Database db = await database;
+    return await db.delete(tableTransactions);
+  }
+
   // Eliminar transacción
   Future<int> deleteTransaction(String id) async {
     Database db = await database;

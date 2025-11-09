@@ -1,22 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/app_provider.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  String? _errorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -162,6 +165,36 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 24),
                 
                 // Botón Iniciar Sesión
+                if (_errorMessage != null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.redAccent),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(color: Colors.red, fontSize: 12),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 16, color: Colors.red),
+                          padding: EdgeInsets.zero,
+                          onPressed: () => setState(() => _errorMessage = null),
+                        ),
+                      ],
+                    ),
+                  )
+                  .animate()
+                  .fadeIn(),
+                  const SizedBox(height: 12),
+                ],
                 ElevatedButton(
                   onPressed: _isLoading ? null : _handleLogin,
                   style: ElevatedButton.styleFrom(
@@ -284,20 +317,43 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() {
       _isLoading = true;
+      _errorMessage = null;
     });
 
-    // Simulación de login
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      final authNotifier = ref.read(authNotifierProvider.notifier);
 
-    if (!mounted) return;
+      await authNotifier.login(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+      );
 
-    // Guardar datos en el provider
-    final appProvider = context.read<AppProvider>();
-    appProvider.setUserName(_emailController.text.split('@')[0]);
-    appProvider.setLoginStatus(true);
+      if (!mounted) return;
 
-    // Navegar al home
-    context.go('/home');
+      final newState = ref.read(authNotifierProvider);
+
+      if (newState.isAuthenticated) {
+        // Inicializar datos post-login
+        if (mounted) {
+          context.read<AppProvider>().initializeAfterLogin();
+          // El GoRouter redirigirá automáticamente a /home
+        }
+      } else if (newState.error != null) {
+        if (mounted) {
+          setState(() {
+            _errorMessage = newState.error;
+            _isLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Error al iniciar sesión: $e';
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override

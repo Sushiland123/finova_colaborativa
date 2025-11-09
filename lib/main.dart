@@ -1,26 +1,18 @@
-import 'data/models/group_model.dart';
-import 'data/models/education_model.dart';
+// Rutas centralizadas con guard de autenticación
+import 'routes/app_router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart' as provider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // Importaciones de la app
-import 'presentation/screens/splash_screen.dart';
-import 'presentation/screens/onboarding_screen.dart';
-import 'presentation/screens/home_screen.dart';
-import 'presentation/screens/auth/login_screen.dart';
-import 'presentation/screens/groups_screen.dart';
-import 'presentation/screens/group_detail_screen.dart';
-import 'presentation/screens/education_screen.dart';
-import 'presentation/screens/course_detail.dart';
-import 'presentation/screens/transactions_screen.dart';
 import 'presentation/providers/app_provider.dart';
 import 'presentation/providers/theme_provider.dart';
+import 'presentation/providers/auth_provider.dart';
 import 'core/theme/app_theme.dart';
+import 'core/utils/logger.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,17 +36,50 @@ void main() async {
   );
 }
 
-class FinovaApp extends ConsumerWidget {
+class FinovaApp extends ConsumerStatefulWidget {
   const FinovaApp({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FinovaApp> createState() => _FinovaAppState();
+}
+
+class _FinovaAppState extends ConsumerState<FinovaApp> {
+  late AppProvider _appProvider;
+
+  @override
+  void initState() {
+    super.initState();
+    // Inicializar AppProvider
+    _appProvider = AppProvider();
+    
+    // Verificar sesión al iniciar la app
+    print('[MAIN] 🚀 ============ FINOVA APP initState ============');
+    Future.microtask(() async {
+      print('[MAIN] 🚀 Llamando a checkSession()...');
+      // Pasar appProvider al checkSession para que pueda cargar datos
+      final authNotifier = ref.read(authNotifierProvider.notifier);
+      // Como AuthNotifier ya está creado, vamos a usar un approach diferente
+      await authNotifier.checkSession();
+      
+      // Si está autenticado, cargar transacciones
+      if (ref.read(authNotifierProvider).isAuthenticated) {
+        print('[MAIN] 📥 Usuario autenticado, cargando transacciones iniciales...');
+        await _appProvider.loadTransactions();
+        print('[MAIN] ✅ Transacciones iniciales cargadas');
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Observar el tema desde Riverpod
     final themeMode = ref.watch(themeModeProvider);
     
-    return provider.MultiProvider(
+  final router = ref.watch(goRouterProvider);
+
+  return provider.MultiProvider(
       providers: [
-        provider.ChangeNotifierProvider(create: (_) => AppProvider()),
+        provider.ChangeNotifierProvider.value(value: _appProvider),
         // Agregar más providers de Provider aquí según necesites
       ],
       child: MaterialApp.router(
@@ -63,7 +88,7 @@ class FinovaApp extends ConsumerWidget {
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
         themeMode: themeMode, // Usar el tema desde Riverpod
-        routerConfig: _router,
+  routerConfig: router,
         localizationsDelegates: const [
           GlobalMaterialLocalizations.delegate,
           GlobalWidgetsLocalizations.delegate,
@@ -77,58 +102,4 @@ class FinovaApp extends ConsumerWidget {
     );
   }
 }
-
-// Configuración de rutas
-final GoRouter _router = GoRouter(
-  initialLocation: '/splash',
-  routes: [
-    GoRoute(
-      path: '/splash',
-      builder: (context, state) => const SplashScreen(),
-    ),
-    GoRoute(
-      path: '/onboarding',
-      builder: (context, state) => const OnboardingScreen(),
-    ),
-    GoRoute(
-      path: '/login',
-      builder: (context, state) => const LoginScreen(),
-    ),
-    GoRoute(
-      path: '/home',
-      builder: (context, state) => const HomeScreen(),
-    ),
-    GoRoute(
-      path: '/groups',
-      builder: (context, state) => const GroupsScreen(),
-    ),
-    GoRoute(
-      path: '/group-detail',
-      builder: (context, state) {
-        final group = state.extra;
-        if (group == null || group is! Group) {
-          return const Scaffold(body: Center(child: Text('Grupo no especificado')));
-        }
-  return GroupDetailScreen(group: group);
-      },
-    ),
-    GoRoute(
-      path: '/education',
-      builder: (context, state) => const EducationScreen(),
-    ),
-    GoRoute(
-      path: '/course-detail',
-      builder: (context, state) {
-        final course = state.extra;
-        if (course == null || course is! Course) {
-          return const Scaffold(body: Center(child: Text('Curso no especificado')));
-        }
-  return CourseDetailScreen(course: course);
-      },
-    ),
-    GoRoute(
-      path: '/transactions',
-      builder: (context, state) => const TransactionsScreen(),
-    ),
-  ],
-);
+// Las rutas ahora se administran en `routes/app_router.dart`

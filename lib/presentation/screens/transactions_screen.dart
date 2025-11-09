@@ -32,9 +32,19 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         _filterTransactions();
       }
     });
+
+    // Cargar transacciones al entrar a la pantalla (backend primero con fallback local)
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final provider = context.read<AppProvider>();
+      await provider.loadTransactions();
+      if (!mounted) return;
+      _filterTransactions();
+    });
   }
 
   void _filterTransactions() {
+    if (!mounted) return;
     final provider = context.read<AppProvider>();
     switch (_tabController.index) {
       case 0: // Todos
@@ -64,6 +74,19 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         elevation: 0,
         backgroundColor: Theme.of(context).primaryColor,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            onPressed: () async {
+              await context.read<AppProvider>().ensureRemoteTransactions();
+              _filterTransactions();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Transacciones recargadas desde backend')),
+              );
+            },
+            icon: const Icon(Icons.sync),
+            tooltip: 'Forzar carga remota',
+          )
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,

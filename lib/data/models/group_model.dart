@@ -84,6 +84,52 @@ class Group {
     );
   }
 
+  /// Crea un grupo desde la respuesta del backend NestJS.
+  /// Estructura esperada:
+  /// {
+  ///   id: string,
+  ///   name: string,
+  ///   description: string,
+  ///   creatorId: string,
+  ///   memberIds: string[],
+  ///   inviteCode: string,
+  ///   totalBalance: number,
+  ///   memberBalances: { userId: number, ... },
+  ///   createdAt: ISO8601
+  /// }
+  factory Group.fromBackend(Map<String, dynamic> json) {
+    // Fallback seguro para campos opcionales
+    final rawMembers = json['memberIds'];
+    List<String> members;
+    if (rawMembers is List) {
+      members = rawMembers.map((e) => e.toString()).toList();
+    } else if (rawMembers is String) {
+      members = rawMembers.split(',');
+    } else {
+      members = [];
+    }
+
+    return Group(
+      id: json['id']?.toString(),
+      name: json['name'] ?? 'Sin nombre',
+      description: json['description'] ?? '',
+      creatorId: json['creatorId']?.toString() ?? '',
+      memberIds: members,
+      type: GroupType.other, // El backend aún no expone el tipo; default other
+      inviteCode: json['inviteCode']?.toString(),
+      createdAt: _parseDate(json['createdAt']),
+      totalBalance: (json['totalBalance'] is num) ? (json['totalBalance'] as num).toDouble() : 0.0,
+    );
+  }
+
+  static DateTime _parseDate(dynamic value) {
+    if (value is DateTime) return value;
+    if (value is String) {
+      try { return DateTime.parse(value); } catch (_) {}
+    }
+    return DateTime.now();
+  }
+
   String getTypeIcon() {
     switch (type) {
       case GroupType.family:
