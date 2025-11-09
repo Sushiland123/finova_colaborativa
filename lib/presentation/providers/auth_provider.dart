@@ -1,12 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../data/repositories/auth_repository.dart';
-import '../../data/datasources/remote/auth_remote_datasource.dart';
+import '../../domain/entities/auth_entity.dart';
+import '../../domain/usecases/auth_usecases.dart';
+import '../../domain/providers/domain_providers.dart';
 import '../../core/providers/dio_provider.dart';
-import '../../core/errors/dio_error_mapper.dart';
 import '../../core/utils/logger.dart';
 import '../../core/network/dio_client.dart';
 
-// Estado de autenticación
+/// Estado de autenticación para UI
+/// Mantiene compatibilidad con código existente
 class AuthState {
   final bool isLoading;
   final bool isAuthenticated;
@@ -35,86 +36,123 @@ class AuthState {
         email: email ?? this.email,
         error: error,
       );
+
+  /// Crear desde AuthEntity del dominio
+  factory AuthState.fromEntity(AuthEntity entity, {bool isLoading = false, String? error}) {
+    return AuthState(
+      isLoading: isLoading,
+      isAuthenticated: entity.isAuthenticated,
+      userId: entity.user?.id,
+      email: entity.user?.email,
+      error: error,
+    );
+  }
 }
 
+/// Notifier refactorizado usando Clean Architecture
 class AuthNotifier extends StateNotifier<AuthState> {
-  final AuthRepository _repository;
+  final LoginUseCase _loginUseCase;
+  final LogoutUseCase _logoutUseCase;
+  final IsLoggedInUseCase _isLoggedInUseCase;
   final DioClient _dioClient;
-  AuthNotifier(this._repository, this._dioClient) : super(const AuthState());
 
+  AuthNotifier({
+    required LoginUseCase loginUseCase,
+    required LogoutUseCase logoutUseCase,
+    required IsLoggedInUseCase isLoggedInUseCase,
+    required DioClient dioClient,
+  })  : _loginUseCase = loginUseCase,
+        _logoutUseCase = logoutUseCase,
+        _isLoggedInUseCase = isLoggedInUseCase,
+        _dioClient = dioClient,
+        super(const AuthState());
+
+  /// Login usando Use Case
   Future<void> login(String email, String password) async {
+    AppLogger.info('[AUTH_NOTIFIER] 🔐 Iniciando login...');
     state = state.copyWith(isLoading: true, error: null);
+    
     try {
-      final resp = await _repository.login(email, password);
-      state = state.copyWith(
-        isLoading: false,
-        isAuthenticated: true,
-        userId: resp.user?.id,
-        email: resp.user?.email ?? email,
+      final authEntity = await _loginUseCase.call(
+        LoginParams(email: email, password: password),
       );
+
+      state = AuthState.fromEntity(authEntity);
+      AppLogger.info('[AUTH_NOTIFIER] ✅ Login exitoso: ${authEntity.user?.email}');
     } catch (e) {
-      final mapped = DioErrorMapper.map(e);
+      AppLogger.error('[AUTH_NOTIFIER] ❌ Error en login', e);
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: false,
-        error: mapped.message,
+        error: e.toString(),
       );
     }
   }
 
+  /// Logout usando Use Case
   Future<void> logout() async {
-    AppLogger.info('[AUTH] ============ LOGOUT INICIADO ============');
-    AppLogger.info('[AUTH] Estado ANTES: isAuthenticated=${state.isAuthenticated}, isLoading=${state.isLoading}');
-    // Marcamos loading pero mantenemos isAuthenticated hasta confirmar logout remoto
+    AppLogger.info('[AUTH_NOTIFIER] 🚪 ============ LOGOUT INICIADO ============');
+    AppLogger.info('[AUTH_NOTIFIER] Estado ANTES: isAuthenticated=${state.isAuthenticated}');
+    
     state = state.copyWith(isLoading: true, error: null);
     _dioClient.beginLogout();
+    
     try {
       final tokenBefore = await _dioClient.getToken();
       if (tokenBefore == null) {
-        AppLogger.warning('[AUTH] No había access token al iniciar logout');
+        AppLogger.warning('[AUTH_NOTIFIER] No había access token al iniciar logout');
       } else {
-        AppLogger.info('[AUTH] Access token presente (${tokenBefore.substring(0, 20)}...), intentaremos /auth/logout');
+        AppLogger.info('[AUTH_NOTIFIER] Token presente, ejecutando logout...');
       }
-      await _repository.logout(); // Esto intentará revocar refresh token en backend
-      AppLogger.info('[AUTH] ✅ Logout remoto OK');
+
+      // Ejecutar Use Case
+      await _logoutUseCase.call();
+      AppLogger.info('[AUTH_NOTIFIER] ✅ Logout exitoso');
     } catch (e) {
-      // 401 aquí es aceptable si el token ya expiró; igual seguimos con limpieza local
-      AppLogger.warning('[AUTH] ⚠️ Logout remoto falló o devolvió error: $e (continuamos)');
+      // Error es aceptable (ej: token expirado)
+      AppLogger.warning('[AUTH_NOTIFIER] ⚠️ Error en logout remoto (continuamos): $e');
     } finally {
-      AppLogger.info('[AUTH] 🧹 Limpiando tokens locales...');
-      await _dioClient.clearTokens(); // Limpieza final asegurada
-      AppLogger.info('[AUTH] 🧹 Reseteando state...');
+      // Limpieza local garantizada
+      AppLogger.info('[AUTH_NOTIFIER] 🧹 Limpiando estado local...');
+      await _dioClient.clearTokens();
       state = const AuthState(); // Reset completo
       _dioClient.endLogout();
-      AppLogger.info('[AUTH] Estado DESPUÉS: isAuthenticated=${state.isAuthenticated}, isLoading=${state.isLoading}');
-      AppLogger.info('[AUTH] ============ LOGOUT COMPLETADO ============');
+      AppLogger.info('[AUTH_NOTIFIER] Estado DESPUÉS: isAuthenticated=${state.isAuthenticated}');
+      AppLogger.info('[AUTH_NOTIFIER] 🚪 ============ LOGOUT COMPLETADO ============');
     }
   }
 
+  /// Verificar sesión existente usando Use Case
   Future<void> checkSession() async {
-    AppLogger.info('[AUTH] 🔍 ============ CHECK SESSION ============');
-    final logged = await _repository.isLoggedIn();
-    AppLogger.info('[AUTH] 🔍 Repository reporta logged=$logged');
-    if (logged) {
-      AppLogger.info('[AUTH] ✅ Restaurando sesión (isAuthenticated → true)');
-      state = state.copyWith(isAuthenticated: true);
-    } else {
-      AppLogger.info('[AUTH] ❌ No hay sesión para restaurar');
+    AppLogger.info('[AUTH_NOTIFIER] 🔍 ============ CHECK SESSION ============');
+    
+    try {
+      final isLoggedIn = await _isLoggedInUseCase.call();
+      AppLogger.info('[AUTH_NOTIFIER] 🔍 Use Case reporta logged=$isLoggedIn');
+      
+      if (isLoggedIn) {
+        AppLogger.info('[AUTH_NOTIFIER] ✅ Restaurando sesión');
+        state = state.copyWith(isAuthenticated: true);
+      } else {
+        AppLogger.info('[AUTH_NOTIFIER] ❌ No hay sesión');
+      }
+    } catch (e) {
+      AppLogger.error('[AUTH_NOTIFIER] ❌ Error verificando sesión', e);
     }
-    AppLogger.info('[AUTH] 🔍 Estado final: isAuthenticated=${state.isAuthenticated}');
-    AppLogger.info('[AUTH] 🔍 ============ CHECK SESSION FIN ============');
+    
+    AppLogger.info('[AUTH_NOTIFIER] 🔍 Estado final: isAuthenticated=${state.isAuthenticated}');
+    AppLogger.info('[AUTH_NOTIFIER] 🔍 ============ CHECK SESSION FIN ============');
   }
 }
 
-// Providers
-final authRepositoryProvider = Provider<AuthRepository>((ref) {
-  final dioClient = ref.watch(dioClientProvider);
-  final remote = AuthRemoteDataSource(dioClient);
-  return AuthRepository(remote, dioClient);
-});
+// ============ PROVIDERS ============
 
+/// Provider refactorizado usando Clean Architecture
 final authNotifierProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  final repo = ref.watch(authRepositoryProvider);
-  final dioClient = ref.watch(dioClientProvider);
-  return AuthNotifier(repo, dioClient);
+  return AuthNotifier(
+    loginUseCase: ref.watch(loginUseCaseProvider),
+    logoutUseCase: ref.watch(logoutUseCaseProvider),
+    isLoggedInUseCase: ref.watch(isLoggedInUseCaseProvider),
+    dioClient: ref.watch(dioClientProvider),
+  );
 });

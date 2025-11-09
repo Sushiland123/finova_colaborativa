@@ -4,12 +4,16 @@ import '../../core/providers/dio_provider.dart';
 import '../../data/database/database_service.dart';
 import '../../data/datasources/remote/transaction_remote_datasource.dart';
 import '../../data/datasources/remote/auth_remote_datasource.dart';
+import '../../data/datasources/remote/groups_remote_datasource.dart';
 import '../../data/repositories/transaction_repository_impl.dart';
 import '../../data/repositories/auth_repository_impl.dart';
+import '../../data/repositories/group_repository_impl.dart';
 import '../../domain/repositories/i_transaction_repository.dart';
 import '../../domain/repositories/i_auth_repository.dart';
+import '../../domain/repositories/i_group_repository.dart';
 import '../../domain/usecases/transaction_usecases.dart';
 import '../../domain/usecases/auth_usecases.dart';
+import '../../domain/usecases/group_usecases.dart';
 
 // ============ PROVIDERS DE DATASOURCES ============
 
@@ -28,6 +32,12 @@ final transactionRemoteDataSourceProvider = Provider<TransactionRemoteDataSource
 final authRemoteDataSourceProvider = Provider<AuthRemoteDataSource>((ref) {
   final dioClient = ref.watch(dioClientProvider);
   return AuthRemoteDataSource(dioClient);
+});
+
+/// Provider para GroupsRemoteDataSource
+final groupsRemoteDataSourceProvider = Provider<GroupsRemoteDataSource>((ref) {
+  final dioClient = ref.watch(dioClientProvider);
+  return GroupsRemoteDataSource(dioClient);
 });
 
 // ============ PROVIDERS DE REPOSITORIOS ============
@@ -52,6 +62,12 @@ final authRepositoryProvider = Provider<IAuthRepository>((ref) {
     remote: remoteDataSource,
     dioClient: dioClient,
   );
+});
+
+/// Provider para IGroupRepository
+final groupRepositoryProvider = Provider<IGroupRepository>((ref) {
+  final remoteDataSource = ref.watch(groupsRemoteDataSourceProvider);
+  return GroupRepositoryImpl(remoteDataSource);
 });
 
 // ============ PROVIDERS DE USE CASES - TRANSACTIONS ============
@@ -106,4 +122,26 @@ final isLoggedInUseCaseProvider = Provider<IsLoggedInUseCase>((ref) {
 final getCurrentUserUseCaseProvider = Provider<GetCurrentUserUseCase>((ref) {
   final repository = ref.watch(authRepositoryProvider);
   return GetCurrentUserUseCase(repository);
+});
+
+// ============ PROVIDERS DE USE CASES - GROUPS ============
+
+final getUserGroupsUseCaseProvider = Provider<GetUserGroupsUseCase>((ref) {
+  final repository = ref.watch(groupRepositoryProvider);
+  return GetUserGroupsUseCase(repository);
+});
+
+final createGroupUseCaseProvider = Provider<CreateGroupUseCase>((ref) {
+  final repository = ref.watch(groupRepositoryProvider);
+  return CreateGroupUseCase(repository);
+});
+
+final joinGroupUseCaseProvider = Provider<JoinGroupUseCase>((ref) {
+  final repository = ref.watch(groupRepositoryProvider);
+  return JoinGroupUseCase(repository);
+});
+
+final leaveGroupUseCaseProvider = Provider<LeaveGroupUseCase>((ref) {
+  final repository = ref.watch(groupRepositoryProvider);
+  return LeaveGroupUseCase(repository);
 });
