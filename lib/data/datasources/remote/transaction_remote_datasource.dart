@@ -16,7 +16,13 @@ class TransactionRemoteDataSource {
       if (resp.data is List) {
         final list = (resp.data as List)
             .whereType<Map>()
-            .map((e) => Transaction.fromBackend(Map<String, dynamic>.from(e)))
+            .map((e) {
+              final map = Map<String, dynamic>.from(e);
+              AppLogger.info('[REMOTE_TX] 🔍 Raw transaction: id=${map['id']}, amount=${map['amount']} (type: ${map['amount'].runtimeType})');
+              final transaction = Transaction.fromBackend(map);
+              AppLogger.info('[REMOTE_TX] 🔍 Parsed transaction: id=${transaction.id}, amount=${transaction.amount}');
+              return transaction;
+            })
             .toList();
         AppLogger.info('[REMOTE_TX] ✅ ${list.length} transacciones recibidas desde backend');
         return list;
@@ -24,7 +30,13 @@ class TransactionRemoteDataSource {
         final raw = (resp.data as Map)['data'] as List;
         final list = raw
             .whereType<Map>()
-            .map((e) => Transaction.fromBackend(Map<String, dynamic>.from(e)))
+            .map((e) {
+              final map = Map<String, dynamic>.from(e);
+              AppLogger.info('[REMOTE_TX] 🔍 Raw transaction: id=${map['id']}, amount=${map['amount']} (type: ${map['amount'].runtimeType})');
+              final transaction = Transaction.fromBackend(map);
+              AppLogger.info('[REMOTE_TX] 🔍 Parsed transaction: id=${transaction.id}, amount=${transaction.amount}');
+              return transaction;
+            })
             .toList();
         AppLogger.info('[REMOTE_TX] ✅ ${list.length} transacciones (envuelto)');
         return list;

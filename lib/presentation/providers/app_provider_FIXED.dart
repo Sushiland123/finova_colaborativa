@@ -92,70 +92,122 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
   
-  // Cargar transacciones desde backend (con fallback a local)
+  // 🔥 NUEVO: Limpiar SQLite completamente (útil para resolver conflictos)
+  Future<void> clearLocalCache() async {
+    try {
+      AppLogger.info('[APP_PROVIDER] 🧹 Limpiando cache local de SQLite...');
+      await _dbService.deleteAllTransactions();
+      AppLogger.info('[APP_PROVIDER] ✅ Cache local limpiado');
+    } catch (e) {
+      AppLogger.warning('[APP_PROVIDER] ⚠️ Error limpiando cache: $e');
+    }
+  }
+  
+  // 🔥 MEJORADO: Cargar transacciones con estrategia correcta de sincronización
   Future<void> loadTransactions() async {
     try {
-      AppLogger.info('[APP_PROVIDER] 🔄 Cargando transacciones desde backend...');
-      // Intentar cargar desde backend primero
-      _transactions = await _remoteDataSource.getTransactions();
-      AppLogger.info('[APP_PROVIDER] ✅ Transacciones cargadas desde backend: ${_transactions.length}');
+      AppLogger.info('[APP_PROVIDER] 🔄 ====== INICIO loadTransactions() ======');
       
-      // Actualizar estadísticas PRIMERO (antes de guardar en local)
-      _filteredTransactions = _transactions;
-      await updateStatistics();
-      
-      // Guardar en local para cache/offline (en segundo plano, sin bloquear)
-      _saveToLocalAsync();
+      // 1. Intentar cargar desde backend primero (source of truth)
+      try {
+        AppLogger.info('[APP_PROVIDER] 🌐 Intentando cargar desde backend...');
+        final backendTransactions = await _remoteDataSource.getTransactions();
+        AppLogger.info('[APP_PROVIDER] ✅ Backend respondió con ${backendTransactions.length} transacciones');
+        
+        // 2. Si backend responde exitosamente, usar esos datos
+        _transactions = backendTransactions;
+        _filteredTransactions = _transactions;
+        
+        // 3. Actualizar estadísticas ANTES de guardar en local
+        await updateStatistics();
+        
+        // 4. Sincronizar a SQLite: REEMPLAZAR todos los datos locales
+        await _syncBackendToLocal(backendTransactions);
+        
+        AppLogger.info('[APP_PROVIDER] ✅ Transacciones cargadas y sincronizadas desde backend');
+      } catch (backendError) {
+        // Backend no disponible - usar fallback local
+        AppLogger.warning('[APP_PROVIDER] ⚠️ Backend no disponible: $backendError');
+        AppLogger.info('[APP_PROVIDER] 📦 Cargando desde SQLite local...');
+        
+        _transactions = await _dbService.getTransactions();
+        _filteredTransactions = _transactions;
+        await updateStatistics();
+        
+        AppLogger.info('[APP_PROVIDER] 📦 ${_transactions.length} transacciones cargadas desde local');
+        
+        // Intentar sincronizar transacciones locales pendientes al backend
+        _syncLocalToBackend();
+      }
     } catch (e) {
-      // Fallback a base de datos local si backend falla
-      AppLogger.warning('[APP_PROVIDER] ⚠️ Error cargando desde backend, usando local: $e');
-      _transactions = await _dbService.getTransactions();
-      AppLogger.info('[APP_PROVIDER] 📦 Transacciones cargadas desde local: ${_transactions.length}');
-      _filteredTransactions = _transactions;
+      AppLogger.warning('[APP_PROVIDER] ❌ Error crítico en loadTransactions: $e');
+      _transactions = [];
+      _filteredTransactions = [];
       await updateStatistics();
-      
-      // Intentar sincronizar transacciones locales pendientes al backend
-      _syncPendingTransactions();
     }
     
+    AppLogger.info('[APP_PROVIDER] 🔄 ====== FIN loadTransactions() ======');
     notifyListeners();
   }
   
-  // Guardar a local en segundo plano
-  void _saveToLocalAsync() {
-    // No esperamos - se ejecuta en segundo plano
-    Future.microtask(() async {
-      try {
-        for (var transaction in _transactions) {
-          await _dbService.insertTransaction(transaction);
-        }
-        AppLogger.info('[APP_PROVIDER] 💾 ${_transactions.length} transacciones guardadas en local');
-      } catch (e) {
-        AppLogger.warning('[APP_PROVIDER] ⚠️ Error guardando en local (no crítico): $e');
+  // 🔥 NUEVO: Sincronizar backend → local (reemplazar todo)
+  Future<void> _syncBackendToLocal(List<Transaction> backendTransactions) async {
+    try {
+      AppLogger.info('[APP_PROVIDER] 🔄 Sincronizando backend → local...');
+      
+      // 1. Limpiar TODA la tabla local
+      await _dbService.deleteAllTransactions();
+      AppLogger.info('[APP_PROVIDER] 🧹 SQLite limpiado');
+      
+      // 2. Insertar todas las transacciones del backend
+      for (var transaction in backendTransactions) {
+        await _dbService.insertTransaction(transaction);
       }
-    });
+      
+      AppLogger.info('[APP_PROVIDER] ✅ ${backendTransactions.length} transacciones sincronizadas a SQLite');
+    } catch (e) {
+      AppLogger.warning('[APP_PROVIDER] ⚠️ Error sincronizando a local: $e');
+    }
   }
   
-  // Sincronizar transacciones pendientes al backend
-  void _syncPendingTransactions() {
-    Future.microtask(() async {
-      try {
-        AppLogger.info('[APP_PROVIDER] 🔄 Intentando sincronizar transacciones locales...');
-        for (var transaction in _transactions) {
-          try {
-            // Intentar crear en backend
-            await _remoteDataSource.createTransaction(transaction);
-            AppLogger.info('[APP_PROVIDER] ✅ Transacción sincronizada: ${transaction.title}');
-          } catch (e) {
-            AppLogger.warning('[APP_PROVIDER] ⚠️ Error sincronizando ${transaction.title}: $e');
-          }
-        }
-        // Recargar desde backend después de sincronizar
-        await loadTransactions();
-      } catch (e) {
-        AppLogger.warning('[APP_PROVIDER] ⚠️ Error en sincronización: $e');
+  // 🔥 MEJORADO: Sincronizar local → backend (solo transacciones pendientes)
+  Future<void> _syncLocalToBackend() async {
+    try {
+      AppLogger.info('[APP_PROVIDER] 🔄 Intentando sincronizar transacciones locales al backend...');
+      
+      // Obtener transacciones locales
+      final localTransactions = await _dbService.getTransactions();
+      
+      if (localTransactions.isEmpty) {
+        AppLogger.info('[APP_PROVIDER] ℹ️ No hay transacciones locales para sincronizar');
+        return;
       }
-    });
+      
+      int successCount = 0;
+      int failCount = 0;
+      
+      for (var transaction in localTransactions) {
+        try {
+          // Intentar crear en backend
+          await _remoteDataSource.createTransaction(transaction);
+          successCount++;
+          AppLogger.info('[APP_PROVIDER] ✅ Sincronizada: ${transaction.title}');
+        } catch (e) {
+          failCount++;
+          AppLogger.warning('[APP_PROVIDER] ⚠️ Error sincronizando "${transaction.title}": $e');
+        }
+      }
+      
+      AppLogger.info('[APP_PROVIDER] 📊 Sincronización local→backend: $successCount exitosas, $failCount fallidas');
+      
+      // Si hubo sincronizaciones exitosas, recargar desde backend
+      if (successCount > 0) {
+        AppLogger.info('[APP_PROVIDER] 🔄 Recargando desde backend después de sincronizar...');
+        await loadTransactions();
+      }
+    } catch (e) {
+      AppLogger.warning('[APP_PROVIDER] ⚠️ Error en sincronización local→backend: $e');
+    }
   }
 
   // Fuerza carga desde backend exclusivamente (para diagnóstico)
@@ -171,22 +223,30 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  // Actualizar estadísticas basadas en las transacciones en memoria
+  // 🔥 MEJORADO: Actualizar estadísticas con logs detallados
   Future<void> updateStatistics() async {
-    AppLogger.info('[APP_PROVIDER] 📊 updateStatistics() - Total transacciones: ${_transactions.length}');
+    AppLogger.info('[APP_PROVIDER] 📊 ====== INICIO updateStatistics() ======');
+    AppLogger.info('[APP_PROVIDER] 📊 Total transacciones en memoria (_transactions): ${_transactions.length}');
+    AppLogger.info('[APP_PROVIDER] 📊 Total transacciones filtradas (_filteredTransactions): ${_filteredTransactions.length}');
     
     // Calcular estadísticas directamente desde _transactions en lugar de la BD local
     double totalIncome = 0.0;
     double totalExpenses = 0.0;
     Map<TransactionCategory, double> categoryExpenses = {};
     
-    for (var transaction in _transactions) {
-      AppLogger.info('[APP_PROVIDER] 📊 Procesando: ${transaction.title}, type=${transaction.type.name}, amount=${transaction.amount}');
+    int incomeCount = 0;
+    int expenseCount = 0;
+    
+    for (int i = 0; i < _transactions.length; i++) {
+      final transaction = _transactions[i];
+      AppLogger.info('[APP_PROVIDER] 📊 [$i] ID=${transaction.id.substring(0, 8)}... title="${transaction.title}", type=${transaction.type.name}, amount=\$${transaction.amount}, category=${transaction.category.name}');
       
       if (transaction.type == TransactionType.income) {
         totalIncome += transaction.amount;
+        incomeCount++;
       } else if (transaction.type == TransactionType.expense) {
         totalExpenses += transaction.amount;
+        expenseCount++;
         
         // Acumular por categoría
         categoryExpenses[transaction.category] = 
@@ -199,35 +259,55 @@ class AppProvider extends ChangeNotifier {
     _totalBalance = totalIncome - totalExpenses;
     _categoryExpenses = categoryExpenses;
     
-    AppLogger.info('[APP_PROVIDER] 📊 Estadísticas actualizadas: Income=$totalIncome, Expenses=$totalExpenses, Balance=$_totalBalance');
+    AppLogger.info('[APP_PROVIDER] 📊 ====== RESUMEN ESTADÍSTICAS ======');
+    AppLogger.info('[APP_PROVIDER] 📊 Ingresos: $incomeCount transacciones = \$${totalIncome.toStringAsFixed(2)}');
+    AppLogger.info('[APP_PROVIDER] 📊 Gastos: $expenseCount transacciones = \$${totalExpenses.toStringAsFixed(2)}');
+    AppLogger.info('[APP_PROVIDER] 📊 Balance: \$${_totalBalance.toStringAsFixed(2)}');
+    AppLogger.info('[APP_PROVIDER] 📊 Categorías con gastos: ${categoryExpenses.length}');
+    categoryExpenses.forEach((category, amount) {
+      AppLogger.info('[APP_PROVIDER] 📊   - ${category.name}: \$${amount.toStringAsFixed(2)}');
+    });
+    AppLogger.info('[APP_PROVIDER] 📊 ====== FIN updateStatistics() ======');
     
     notifyListeners();
   }
 
-  // Agregar nueva transacción (backend + local)
+  // 🔥 MEJORADO: Agregar transacción con manejo correcto offline/online
   Future<void> addTransaction(Transaction transaction) async {
     try {
-      AppLogger.info('[APP_PROVIDER] 📤 Enviando transacción al backend...');
-      // Enviar al backend primero
-      final createdTransaction = await _remoteDataSource.createTransaction(transaction);
-      AppLogger.info('[APP_PROVIDER] ✅ Transacción creada en backend con ID: ${createdTransaction.id}');
+      AppLogger.info('[APP_PROVIDER] 📤 ====== INICIO addTransaction() ======');
+      AppLogger.info('[APP_PROVIDER] 📤 Transacción: "${transaction.title}", \$${transaction.amount}, ${transaction.type.name}');
       
-      // Guardar en local con el ID del backend
-      await _dbService.insertTransaction(createdTransaction);
+      // Intentar enviar al backend primero
+      try {
+        final createdTransaction = await _remoteDataSource.createTransaction(transaction);
+        AppLogger.info('[APP_PROVIDER] ✅ Transacción creada en backend con ID: ${createdTransaction.id}');
+        
+        // Backend exitoso - recargar todo desde backend
+        await loadTransactions();
+      } catch (backendError) {
+        // Backend falló - guardar solo local
+        AppLogger.warning('[APP_PROVIDER] ⚠️ Backend no disponible, guardando solo local: $backendError');
+        await _dbService.insertTransaction(transaction);
+        
+        // Actualizar estado local
+        _transactions.add(transaction);
+        _filteredTransactions = _transactions;
+        await updateStatistics();
+        notifyListeners();
+      }
+      
+      AppLogger.info('[APP_PROVIDER] 📤 ====== FIN addTransaction() ======');
     } catch (e) {
-      // Si backend falla, guardar solo local
-      AppLogger.warning('[APP_PROVIDER] ⚠️ Error enviando al backend, guardando solo local: $e');
-      await _dbService.insertTransaction(transaction);
+      AppLogger.warning('[APP_PROVIDER] ❌ Error crítico en addTransaction: $e');
     }
-    
-    await loadTransactions();
   }
 
   // Actualizar transacción (backend + local)
   Future<void> updateTransaction(Transaction transaction) async {
     try {
       AppLogger.info('[APP_PROVIDER] 📤 Actualizando transacción en backend...');
-  await _remoteDataSource.updateTransaction(transaction.id, transaction);
+      await _remoteDataSource.updateTransaction(transaction.id, transaction);
       AppLogger.info('[APP_PROVIDER] ✅ Transacción actualizada en backend');
       
       // Actualizar en local
