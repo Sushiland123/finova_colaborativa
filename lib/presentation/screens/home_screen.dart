@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' as riverpod;
@@ -27,12 +27,32 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   int touchedIndex = -1;
   bool _loggingOut = false;
+  bool _transactionsLoaded = false; // Flag para cargar solo una vez
 
   final NumberFormat _currencyFormat = NumberFormat.currency(
     locale: 'es_SV',
     symbol: '\$',
     decimalDigits: 2,
   );
+
+  @override
+  void initState() {
+    super.initState();
+    // Cargar transacciones al iniciar el HomeScreen
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!_transactionsLoaded) {
+        AppLogger.info('[HOME_SCREEN] ðŸ“¥ Cargando transacciones iniciales...');
+        final provider = context.read<AppProvider>();
+        await provider.loadTransactions();
+        if (mounted) {
+          setState(() {
+            _transactionsLoaded = true;
+          });
+        }
+        AppLogger.info('[HOME_SCREEN] âœ… Transacciones cargadas');
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
         appBar: AppBar(
           title: const Text('Finova'),
           actions: [
-            // Acción directa para cerrar sesión desde cualquier pestaña
+            // AcciÃ³n directa para cerrar sesiÃ³n desde cualquier pestaÃ±a
             IconButton(
               icon: _loggingOut 
                   ? const SizedBox(
@@ -52,47 +72,47 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                     )
                   : const Icon(Icons.logout),
-              tooltip: 'Cerrar sesión',
+              tooltip: 'Cerrar sesiÃ³n',
               onPressed: _loggingOut ? null : () async {
                 try {
-                  AppLogger.info('[UI] 🔴 ============ AppBar Logout PRESIONADO ============');
+                  AppLogger.info('[UI] ðŸ”´ ============ AppBar Logout PRESIONADO ============');
                   
                   // Resetear data del AppProvider PRIMERO (antes de cualquier setState)
                   final appProvider = context.read<AppProvider>();
-                  AppLogger.info('[UI] 🔴 Reseteando data del AppProvider...');
+                  AppLogger.info('[UI] ðŸ”´ Reseteando data del AppProvider...');
                   appProvider.resetData();
                   
-                  // AHORA sí marcamos loading (después de limpiar datos)
+                  // AHORA sÃ­ marcamos loading (despuÃ©s de limpiar datos)
                   setState(() => _loggingOut = true);
                   
                   // Ejecutar logout
-                  AppLogger.info('[UI] 🔴 Llamando a authNotifier.logout()...');
+                  AppLogger.info('[UI] ðŸ”´ Llamando a authNotifier.logout()...');
                   await ref.read(authNotifierProvider.notifier).logout();
                   
-                  AppLogger.info('[UI] ✅ logout() completado');
+                  AppLogger.info('[UI] âœ… logout() completado');
                   
-                  // Mostrar mensaje de éxito
+                  // Mostrar mensaje de Ã©xito
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Sesión cerrada exitosamente'),
+                        content: Text('SesiÃ³n cerrada exitosamente'),
                         duration: Duration(seconds: 2),
                       ),
                     );
                   }
                 } catch (e) {
-                  AppLogger.error('[UI] ❌ Error al ejecutar logout (AppBar)', e);
+                  AppLogger.error('[UI] âŒ Error al ejecutar logout (AppBar)', e);
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('Error al cerrar sesión: $e'),
+                        content: Text('Error al cerrar sesiÃ³n: $e'),
                         backgroundColor: Colors.red,
                       ),
                     );
                     setState(() => _loggingOut = false);
                   }
                 }
-                // No reseteamos _loggingOut aquí - dejamos que GoRouter cambie la pantalla
+                // No reseteamos _loggingOut aquÃ­ - dejamos que GoRouter cambie la pantalla
               },
             ),
             IconButton(
@@ -125,7 +145,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     await appProvider.loadTransactions(); // Recargar desde backend
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('🗑️ Transacciones locales eliminadas')),
+                        const SnackBar(content: Text('ðŸ—‘ï¸ Transacciones locales eliminadas')),
                       );
                     }
                   }
@@ -156,13 +176,11 @@ class _HomeScreenState extends State<HomeScreen> {
             AppLogger.info('[UI] NavigationBar tap index=$index');
             setState(() => _selectedIndex = index);
             
-            // Si va a la pestaña de Grupos (index=2), cargar datos
+            // Si va a la pestaÃ±a de Grupos (index=2), cargar grupos
+            // (el backend ya devuelve los balances calculados)
             if (index == 2) {
               final provider = context.read<AppProvider>();
               await provider.loadGroups();
-              for (var group in provider.groups) {
-                await provider.loadGroupExpenses(group.id);
-              }
             }
           },
           destinations: const [
@@ -310,14 +328,14 @@ class _HomeScreenState extends State<HomeScreen> {
       'Others': Colors.grey,
     };
     final labelMap = {
-      'Food': '🍔 Alimentación',
-      'Transport': '🚗 Transporte',
-      'Entertainment': '🎮 Entretenimiento',
-      'Health': '🏥 Salud',
-      'Education': '📚 Educación',
-      'Services': '💡 Servicios',
-      'Shopping': '🛍️ Compras',
-      'Others': '📦 Otros',
+      'Food': 'ðŸ” AlimentaciÃ³n',
+      'Transport': 'ðŸš— Transporte',
+      'Entertainment': 'ðŸŽ® Entretenimiento',
+      'Health': 'ðŸ¥ Salud',
+      'Education': 'ðŸ“š EducaciÃ³n',
+      'Services': 'ðŸ’¡ Servicios',
+      'Shopping': 'ðŸ›ï¸ Compras',
+      'Others': 'ðŸ“¦ Otros',
     };
 
     final sections = <PieChartSectionData>[];
@@ -341,7 +359,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [Icon(Icons.pie_chart, color: Theme.of(context).primaryColor), const SizedBox(width: 8), const Text('Gastos por Categoría', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))]),
+            Row(children: [Icon(Icons.pie_chart, color: Theme.of(context).primaryColor), const SizedBox(width: 8), const Text('Gastos por CategorÃ­a', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))]),
             const SizedBox(height: 24),
             AspectRatio(
               aspectRatio: 1.3,
@@ -393,7 +411,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Acciones Rápidas', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const Text('Acciones RÃ¡pidas', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
         Row(children: [
           Expanded(child: _quickActionButton('Ir a Transacciones', Icons.receipt_long, Colors.blue, () => setState(() => _selectedIndex = 1))),
@@ -420,7 +438,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildProfile(AppProvider appProvider, riverpod.WidgetRef ref) {
-    AppLogger.info('[UI] 👤 _buildProfile construyéndose');
+    AppLogger.info('[UI] ðŸ‘¤ _buildProfile construyÃ©ndose');
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -456,20 +474,20 @@ class _HomeScreenState extends State<HomeScreen> {
               ? const CircularProgressIndicator()
               : ElevatedButton(
                   onPressed: () async {
-                    AppLogger.info('[UI] 🔴 ============ Botón Cerrar Sesión PRESIONADO ============');
+                    AppLogger.info('[UI] ðŸ”´ ============ BotÃ³n Cerrar SesiÃ³n PRESIONADO ============');
                     
                     try {
                       // Resetear data del AppProvider PRIMERO (antes de setState)
-                      AppLogger.info('[UI] 🔴 Reseteando data del AppProvider...');
+                      AppLogger.info('[UI] ðŸ”´ Reseteando data del AppProvider...');
                       appProvider.resetData();
                       
-                      // Marca visual DESPUÉS de limpiar datos
+                      // Marca visual DESPUÃ‰S de limpiar datos
                       setState(() {
                         _loggingOut = true;
                       });
 
                       // Ejecutar logout
-                      AppLogger.info('[UI] 🔴 Llamando a authNotifier.logout()...');
+                      AppLogger.info('[UI] ðŸ”´ Llamando a authNotifier.logout()...');
                       await ref
                           .read(authNotifierProvider.notifier)
                           .logout();
@@ -477,26 +495,26 @@ class _HomeScreenState extends State<HomeScreen> {
                       // Verificar token realmente eliminado (debug)
                       if (kDebugMode) {
                         final tokenPost = await DioClient().getToken();
-                        AppLogger.info('[UI] 🔍 Token después de logout: ${tokenPost == null || tokenPost.isEmpty ? "ELIMINADO ✅" : "AÚN PRESENTE ⚠️"}');
+                        AppLogger.info('[UI] ðŸ” Token despuÃ©s de logout: ${tokenPost == null || tokenPost.isEmpty ? "ELIMINADO âœ…" : "AÃšN PRESENTE âš ï¸"}');
                       }
                       
-                      // Mostrar mensaje de éxito
+                      // Mostrar mensaje de Ã©xito
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Sesión cerrada exitosamente'),
+                            content: Text('SesiÃ³n cerrada exitosamente'),
                             duration: Duration(seconds: 2),
                           ),
                         );
                       }
                       
-                      AppLogger.info('[UI] ✅ Logout completado - GoRouter redirigirá automáticamente');
+                      AppLogger.info('[UI] âœ… Logout completado - GoRouter redirigirÃ¡ automÃ¡ticamente');
                     } catch (e) {
-                      AppLogger.error('[UI] ❌ Error al ejecutar logout', e);
+                      AppLogger.error('[UI] âŒ Error al ejecutar logout', e);
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('Error al cerrar sesión: $e'),
+                            content: Text('Error al cerrar sesiÃ³n: $e'),
                             backgroundColor: Colors.red,
                           ),
                         );
@@ -505,14 +523,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         });
                       }
                     }
-                    // No reseteamos _loggingOut aquí - dejamos que GoRouter cambie la pantalla
+                    // No reseteamos _loggingOut aquÃ­ - dejamos que GoRouter cambie la pantalla
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                   ),
-                  child: const Text('Cerrar Sesión'),
+                  child: const Text('Cerrar SesiÃ³n'),
                 )
         ],
       ),

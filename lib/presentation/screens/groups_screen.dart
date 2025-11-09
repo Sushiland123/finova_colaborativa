@@ -29,12 +29,12 @@ class _GroupsScreenState extends State<GroupsScreen> {
     // Cargar grupos al iniciar
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final provider = context.read<AppProvider>();
+      // Solo cargar grupos - el backend ya calcula los balances
       await provider.loadGroups();
       
-      // Cargar gastos de todos los grupos para actualizar balances
-      for (var group in provider.groups) {
-        await provider.loadGroupExpenses(group.id);
-      }
+      // YA NO ES NECESARIO cargar gastos aquí porque el backend
+      // devuelve los grupos con totalBalance ya calculado
+      // Los gastos se cargarán bajo demanda cuando se entre al detalle del grupo
     });
   }
 
@@ -63,12 +63,8 @@ class _GroupsScreenState extends State<GroupsScreen> {
 
           return RefreshIndicator(
             onRefresh: () async {
+              // Solo recargar grupos - el backend ya trae los balances calculados
               await provider.loadGroups();
-              
-              // Recargar gastos de todos los grupos para actualizar balances
-              for (var group in provider.groups) {
-                await provider.loadGroupExpenses(group.id);
-              }
             },
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
