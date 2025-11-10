@@ -63,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
         appBar: AppBar(
           title: const Text('Finova'),
           actions: [
-            // AcciÃ³n directa para cerrar sesiÃ³n desde cualquier pestaÃ±a
+            // Accion directa para cerrar sesion desde cualquier pestana
             IconButton(
               icon: _loggingOut 
                   ? const SizedBox(
@@ -72,7 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                     )
                   : const Icon(Icons.logout),
-              tooltip: 'Cerrar sesiÃ³n',
+              tooltip: 'Cerrar sesion',
               onPressed: _loggingOut ? null : () async {
                 try {
                   AppLogger.info('[UI] ðŸ”´ ============ AppBar Logout PRESIONADO ============');
@@ -91,21 +91,21 @@ class _HomeScreenState extends State<HomeScreen> {
                   
                   AppLogger.info('[UI] âœ… logout() completado');
                   
-                  // Mostrar mensaje de Ã©xito
+                  // Mostrar mensaje de exito
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('SesiÃ³n cerrada exitosamente'),
+                        content: Text('Sesion cerrada exitosamente'),
                         duration: Duration(seconds: 2),
                       ),
                     );
                   }
                 } catch (e) {
-                  AppLogger.error('[UI] âŒ Error al ejecutar logout (AppBar)', e);
+                  AppLogger.error('[UI] Error al ejecutar logout (AppBar)', e);
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('Error al cerrar sesiÃ³n: $e'),
+                        content: Text('Error al cerrar sesion: $e'),
                         backgroundColor: Colors.red,
                       ),
                     );
@@ -359,7 +359,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [Icon(Icons.pie_chart, color: Theme.of(context).primaryColor), const SizedBox(width: 8), const Text('Gastos por CategorÃ­a', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))]),
+          Row(children: [Icon(Icons.pie_chart, color: Theme.of(context).primaryColor), const SizedBox(width: 8), const Text('Gastos por Categoria', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))]),
             const SizedBox(height: 24),
             AspectRatio(
               aspectRatio: 1.3,
@@ -411,7 +411,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Acciones RÃ¡pidas', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const Text('Acciones Rapidas', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
         Row(children: [
           Expanded(child: _quickActionButton('Ir a Transacciones', Icons.receipt_long, Colors.blue, () => setState(() => _selectedIndex = 1))),
@@ -438,7 +438,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildProfile(AppProvider appProvider, riverpod.WidgetRef ref) {
-    AppLogger.info('[UI] ðŸ‘¤ _buildProfile construyÃ©ndose');
+    AppLogger.info('[UI] _buildProfile construyendose');
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -523,14 +523,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         });
                       }
                     }
-                    // No reseteamos _loggingOut aquÃ­ - dejamos que GoRouter cambie la pantalla
+                    // No reseteamos _loggingOut aqui - dejamos que GoRouter cambie la pantalla
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                   ),
-                  child: const Text('Cerrar SesiÃ³n'),
+                  child: const Text('Cerrar Sesion'),
                 )
         ],
       ),
