@@ -109,7 +109,24 @@ class AuthRepositoryImpl implements IAuthRepository {
     required String email,
     required String password,
   }) async {
-    // TODO: Implementar registro cuando esté disponible en el backend
-    throw UnimplementedError('Registro aún no implementado');
+    try {
+      AppLogger.info('[AUTH_REPO] Registrando usuario: $email');
+      
+      final response = await _remote.register(
+        RegisterRequestDto(
+          nombre: name,
+          email: email,
+          password: password,
+        ),
+      );
+
+      AppLogger.info('[AUTH_REPO] ✅ Usuario registrado: ${response.user?.email}');
+
+      // Después del registro exitoso, hacer login automático
+      return await login(email, password);
+    } catch (e) {
+      AppLogger.error('[AUTH_REPO] ❌ Error en registro', e);
+      throw DioErrorMapper.map(e);
+    }
   }
 }

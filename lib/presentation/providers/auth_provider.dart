@@ -54,16 +54,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final LoginUseCase _loginUseCase;
   final LogoutUseCase _logoutUseCase;
   final IsLoggedInUseCase _isLoggedInUseCase;
+  final RegisterUseCase _registerUseCase;
   final DioClient _dioClient;
 
   AuthNotifier({
     required LoginUseCase loginUseCase,
     required LogoutUseCase logoutUseCase,
     required IsLoggedInUseCase isLoggedInUseCase,
+    required RegisterUseCase registerUseCase,
     required DioClient dioClient,
   })  : _loginUseCase = loginUseCase,
         _logoutUseCase = logoutUseCase,
         _isLoggedInUseCase = isLoggedInUseCase,
+        _registerUseCase = registerUseCase,
         _dioClient = dioClient,
         super(const AuthState());
 
@@ -143,6 +146,38 @@ class AuthNotifier extends StateNotifier<AuthState> {
     AppLogger.info('[AUTH_NOTIFIER] 🔍 Estado final: isAuthenticated=${state.isAuthenticated}');
     AppLogger.info('[AUTH_NOTIFIER] 🔍 ============ CHECK SESSION FIN ============');
   }
+
+  /// Registro usando Use Case
+  Future<void> register({
+    required String name,
+    required String email,
+    required String password,
+    required String confirmPassword,
+  }) async {
+    AppLogger.info('[AUTH_NOTIFIER] 📝 Iniciando registro...');
+    state = state.copyWith(isLoading: true, error: null);
+    
+    try {
+      final authEntity = await _registerUseCase.call(
+        RegisterParams(
+          name: name,
+          email: email,
+          password: password,
+          confirmPassword: confirmPassword,
+        ),
+      );
+
+      state = AuthState.fromEntity(authEntity);
+      AppLogger.info('[AUTH_NOTIFIER] ✅ Registro exitoso: ${authEntity.user?.email}');
+    } catch (e) {
+      AppLogger.error('[AUTH_NOTIFIER] ❌ Error en registro', e);
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: false,
+        error: e.toString(),
+      );
+    }
+  }
 }
 
 // ============ PROVIDERS ============
@@ -153,6 +188,7 @@ final authNotifierProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref
     loginUseCase: ref.watch(loginUseCaseProvider),
     logoutUseCase: ref.watch(logoutUseCaseProvider),
     isLoggedInUseCase: ref.watch(isLoggedInUseCaseProvider),
+    registerUseCase: ref.watch(registerUseCaseProvider),
     dioClient: ref.watch(dioClientProvider),
   );
 });

@@ -65,3 +65,50 @@ class GetCurrentUserUseCase extends NoParamsUseCase<UserEntity?> {
     return await _repository.getCurrentUser();
   }
 }
+
+/// Use Case: Registro
+class RegisterUseCase extends UseCase<AuthEntity, RegisterParams> {
+  final IAuthRepository _repository;
+
+  RegisterUseCase(this._repository);
+
+  @override
+  Future<AuthEntity> call(RegisterParams params) async {
+    // Validaciones de negocio
+    if (params.name.isEmpty || params.name.length < 2) {
+      throw Exception('El nombre debe tener al menos 2 caracteres');
+    }
+
+    if (params.email.isEmpty || !params.email.contains('@')) {
+      throw Exception('Email invalido');
+    }
+
+    if (params.password.isEmpty || params.password.length < 6) {
+      throw Exception('La contrasena debe tener al menos 6 caracteres');
+    }
+
+    if (params.password != params.confirmPassword) {
+      throw Exception('Las contrasenas no coinciden');
+    }
+
+    return await _repository.register(
+      name: params.name,
+      email: params.email,
+      password: params.password,
+    );
+  }
+}
+
+class RegisterParams {
+  final String name;
+  final String email;
+  final String password;
+  final String confirmPassword;
+
+  RegisterParams({
+    required this.name,
+    required this.email,
+    required this.password,
+    required this.confirmPassword,
+  });
+}

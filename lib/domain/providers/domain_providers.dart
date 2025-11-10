@@ -124,6 +124,11 @@ final getCurrentUserUseCaseProvider = Provider<GetCurrentUserUseCase>((ref) {
   return GetCurrentUserUseCase(repository);
 });
 
+final registerUseCaseProvider = Provider<RegisterUseCase>((ref) {
+  final repository = ref.watch(authRepositoryProvider);
+  return RegisterUseCase(repository);
+});
+
 // ============ PROVIDERS DE USE CASES - GROUPS ============
 
 final getUserGroupsUseCaseProvider = Provider<GetUserGroupsUseCase>((ref) {

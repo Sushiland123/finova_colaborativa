@@ -268,14 +268,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       style: TextStyle(color: Colors.grey[600]),
                     ),
                     TextButton(
-                      onPressed: () {
-                        // TODO: Navegar a registro
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Pantalla de registro en desarrollo'),
-                          ),
-                        );
-                      },
+                      onPressed: () => context.go('/register'),
                       child: const Text(
                         'Regístrate',
                         style: TextStyle(fontWeight: FontWeight.w600),

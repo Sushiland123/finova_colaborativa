@@ -8,6 +8,7 @@ import '../presentation/providers/auth_provider.dart';
 import '../presentation/screens/splash_screen.dart';
 import '../presentation/screens/onboarding_screen.dart';
 import '../presentation/screens/auth/login_screen.dart';
+import '../presentation/screens/auth/register_screen.dart';
 import '../presentation/screens/home_screen.dart';
 import '../presentation/screens/groups_screen.dart';
 import '../presentation/screens/group_detail_screen.dart';
@@ -34,9 +35,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final loc = state.matchedLocation; // Ubicación solicitada
       final loggingIn = loc == '/login';
+      final registering = loc == '/register';
       final onboarding = loc == '/onboarding';
       final splash = loc == '/splash';
-      final isPublicRoute = loggingIn || onboarding || splash;
+      final isPublicRoute = loggingIn || registering || onboarding || splash;
 
       print('[ROUTER] 🚦 ================ REDIRECT ================');
       print('[ROUTER] 🚦 Ubicación: $loc');
@@ -73,6 +75,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/register',
+        builder: (context, state) => const RegisterScreen(),
       ),
       GoRoute(
         path: '/home',

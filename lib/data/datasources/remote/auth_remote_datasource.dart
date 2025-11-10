@@ -39,4 +39,16 @@ class AuthRemoteDataSource {
       throw DioErrorMapper.map(e);
     }
   }
+
+  Future<RegisterResponseDto> register(RegisterRequestDto dto) async {
+    try {
+      final resp = await _client.dio.post('/auth/register', data: dto.toJson());
+      if (resp.data is Map<String, dynamic>) {
+        return RegisterResponseDto.fromJson(resp.data as Map<String, dynamic>);
+      }
+      throw NetworkError(NetworkErrorType.unknown, 'Respuesta inválida');
+    } catch (e) {
+      throw DioErrorMapper.map(e);
+    }
+  }
 }
